@@ -9,14 +9,19 @@ class LoopoverPuzzle:
         "D": (1, -1),
         }
 
-    def __init__(self, grid):
-        self.grid = np.array(grid)
+    def __init__(self, start, end):
+        self._grid = np.array(start)
+        self._end_grid = np.array(end)
+        self._is_solved_grid = np.zeros_like(self._grid, dtype=bool)
 
-    def __eq__(self, other):
-        return self.grid == other.grid
+    def _seems_solvable(self):
+        if self._grid.shape != self._end_grid.shape:
+            return False
+
+        return np.array_equal(np.sort(self._grid, axis=None), np.sort(self._end_grid, axis=None))
 
     def draw(self):
-        for row in self.grid:
+        for row in self._grid:
             print(" ".join(row))
         print()
 
@@ -25,9 +30,9 @@ class LoopoverPuzzle:
         axis, shift = self._letter_to_dim_dir[letter]
         index = int(index)
         if axis == 0:
-            self.grid[index, :] = np.roll(self.grid[index, :], shift)
+            self._grid[index, :] = np.roll(self._grid[index, :], shift)
         else:
-            self.grid[:, index] = np.roll(self.grid[:, index], shift)
+            self._grid[:, index] = np.roll(self._grid[:, index], shift)
 
 
 def loopover(mixed_up_board, solved_board):
@@ -35,10 +40,8 @@ def loopover(mixed_up_board, solved_board):
 
 
 if __name__ == "__main__":
-    def board(str):
-        return [list(row) for row in str.split('\n')]
+    def board(str_):
+        return [list(row) for row in str_.split('\n')]
 
-    test = LoopoverPuzzle(board('ACDBE\nFGHIJ\nKLMNO\nPQRST'))
-    test.draw()
-    test._move("R2")
+    test = LoopoverPuzzle(board('ACDBE\nFGHIJ\nKLMNO\nPQRST'), board('ABCDE\nFGHIJ\nKLMNO\nPQRST'))
     test.draw()
