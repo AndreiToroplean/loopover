@@ -19,7 +19,11 @@ class LoopoverPuzzle:
     @property
     def move_strs(self):
         """Return the list of move_strs needed to solve the puzzle. """
-        return [move.to_str() for move in self._applied_moves]
+        move_strs = []
+        for move in self._applied_moves:
+            for move_str in move.to_strs():
+                move_strs.append(move_str)
+        return move_strs
 
     def app_move_strs(self, move_strs):
         for move_str in move_strs:
@@ -89,9 +93,10 @@ class Move(tuple):
 
         return cls(axis, index_, shift)
 
-    def to_str(self):
-        letter = self._axis_shift_to_letter[(self.axis, self.shift)]
-        return f"{letter}{self.index_}"
+    def to_strs(self):
+        norm_shift = self.shift / abs(self.shift)
+        letter = self._axis_shift_to_letter[(self.axis, norm_shift)]
+        return tuple(f"{letter}{self.index_}" for _ in range(abs(self.shift)))
 
     @property
     def axis(self):
@@ -150,3 +155,6 @@ if __name__ == "__main__":
 
     test = LoopoverPuzzle(board('ACDBE\nFGHIJ\nKLMNO\nPQRST'), board('ABCDE\nFGHIJ\nKLMNO\nPQRST'))
     test.draw()
+
+    test_move = Move(0, 2, -2)
+    print(test_move.to_strs())
