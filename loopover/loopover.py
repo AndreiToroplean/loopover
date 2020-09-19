@@ -12,9 +12,9 @@ class LoopoverPuzzle:
         pass
 
     def draw(self):
-        for row in self._board:
-            print(" ".join(row))
-        print()
+        print("\n".join(
+            (" ".join(row)) for row in self._board),
+            )
 
     @property
     def move_strs(self):
