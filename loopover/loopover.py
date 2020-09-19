@@ -6,6 +6,7 @@ class LoopoverPuzzle:
         self._board = np.array(mixed_up_board)
         self._solved_board = np.array(solved_board)
         self._is_solved_board = np.zeros_like(self._board, dtype=bool)
+        self._applied_moves = []
 
     def solve(self):
         pass
@@ -18,7 +19,11 @@ class LoopoverPuzzle:
     @property
     def move_strs(self):
         """Return the list of move_strs needed to solve the puzzle. """
-        return None  # TODO
+        return [move.to_str() for move in self._applied_moves]
+
+    def app_move_strs(self, move_strs):
+        for move_str in move_strs:
+            self._app_move_str(move_str)
 
     def _seems_solvable(self):
         if self._board.shape != self._solved_board.shape:
@@ -36,27 +41,29 @@ class LoopoverPuzzle:
         else:
             self._board[:, move.index_] = np.roll(self._board[:, move.index_], move.shift)
 
-    def _solve_cell(self, dest_index):
-        symb_to_place = self._solved_board[dest_index]
-        dest_col_index, dest_row_index = dest_index
-        current_col_index, current_row_index = np.where(self._board == symb_to_place)
-        row_shift = dest_col_index - current_col_index
-        col_shift = dest_row_index - current_row_index
-        while (current_col_index, current_row_index) != (dest_col_index, dest_row_index):
-            if self._is_row_movable(dest_row_index):
-                self._app_move(0, current_row_index, row_shift)
-                current_row_index += row_shift
-            elif self._is_col_movable(dest_col_index):
-                self._app_move(1, current_col_index, col_shift)
-                current_col_index += col_shift
-            else:
-                ...
+        self._applied_moves.append(move)
 
-    def _is_row_movable(self, row_index):
-        return not np.any(self._is_solved_board[row_index])
-
-    def _is_col_movable(self, col_index):
-        return not np.any(self._is_solved_board[:, col_index])
+    # def _solve_cell(self, dest_index):
+    #     symb_to_place = self._solved_board[dest_index]
+    #     dest_col_index, dest_row_index = dest_index
+    #     current_col_index, current_row_index = np.where(self._board == symb_to_place)
+    #     row_shift = dest_col_index - current_col_index
+    #     col_shift = dest_row_index - current_row_index
+    #     while (current_col_index, current_row_index) != (dest_col_index, dest_row_index):
+    #         if self._is_row_movable(dest_row_index):
+    #             self._app_move(0, current_row_index, row_shift)
+    #             current_row_index += row_shift
+    #         elif self._is_col_movable(dest_col_index):
+    #             self._app_move(1, current_col_index, col_shift)
+    #             current_col_index += col_shift
+    #         else:
+    #             ...
+    #
+    # def _is_row_movable(self, row_index):
+    #     return not np.any(self._is_solved_board[row_index])
+    #
+    # def _is_col_movable(self, col_index):
+    #     return not np.any(self._is_solved_board[:, col_index])
 
 
 class Move(tuple):
@@ -134,12 +141,12 @@ class MoveIndexError(MoveError):
 def loopover(mixed_up_board, solved_board):
     puzzle = LoopoverPuzzle(mixed_up_board, solved_board)
     puzzle.solve()
-    return puzzle.str_moves
+    return puzzle.move_strs
 
 
 if __name__ == "__main__":
     def board(str_):
         return [list(row) for row in str_.split('\n')]
 
-    # test = LoopoverPuzzle(board('ACDBE\nFGHIJ\nKLMNO\nPQRST'), board('ABCDE\nFGHIJ\nKLMNO\nPQRST'))
-    # test.draw()
+    test = LoopoverPuzzle(board('ACDBE\nFGHIJ\nKLMNO\nPQRST'), board('ABCDE\nFGHIJ\nKLMNO\nPQRST'))
+    test.draw()
