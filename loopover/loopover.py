@@ -93,6 +93,19 @@ class Move(tuple):
 
         return cls(axis, index_, shift)
 
+    @classmethod
+    def from_src_dest(cls, src_index, dest_index, board_dims):
+        shifts = [dest_axis_index - src_axis_index for src_axis_index, dest_axis_index in zip(src_index, dest_index)]
+
+        if shifts.count(0) == 0:
+            raise MoveAmbiguousError
+
+        axis = shifts.index(0) ^ 1
+        shift = cls._smallest_shift(shifts[axis], board_dims[axis])
+        index_ = dest_index[axis ^ 1]
+
+        return cls(axis, index_, shift)
+
     def to_strs(self):
         norm_shift = self.shift / abs(self.shift)
         letter = self._axis_shift_to_letter[(self.axis, norm_shift)]
@@ -110,8 +123,12 @@ class Move(tuple):
     def shift(self):
         return self[2]
 
+    @staticmethod
+    def _smallest_shift(shift, dim):
+        return (shift + (dim//2)) % dim - dim//2
+
     def __repr__(self):
-        return f"Move{super().__repr__()}"
+        return f"Move(axis={self.axis}, index_={self.index_}, shift={self.shift})"
 
     _letter_to_axis_shift = {
         "R": (0, 1),
@@ -130,6 +147,14 @@ class Move(tuple):
 
 class MoveError(Exception):
     def __init__(self, message="Incorrect move_str."):
+        super().__init__(message)
+
+
+class MoveAmbiguousError(MoveError):
+    def __init__(self, message=(
+                "There are several distinct ways to achieve this move. \n"
+                "Please let the scr_index and dest_index be equal at least along one axis. "
+                )):
         super().__init__(message)
 
 
@@ -155,6 +180,8 @@ if __name__ == "__main__":
 
     test = LoopoverPuzzle(board('ACDBE\nFGHIJ\nKLMNO\nPQRST'), board('ABCDE\nFGHIJ\nKLMNO\nPQRST'))
     test.draw()
+    print()
 
-    test_move = Move(0, 2, -2)
+    test_move = Move.from_src_dest([3, 0], [3, 2], (4, 4))
+    print(test_move)
     print(test_move.to_strs())
