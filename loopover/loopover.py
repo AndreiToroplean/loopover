@@ -56,17 +56,17 @@ class LoopoverPuzzle:
     def __setitem__(self, key, value):
         self._board[key] = value
 
-    # def _solve_cell(self, dest_index):
-    #     symb_to_place = self._solved_board[dest_index]
-    #     dest_col_index, dest_row_index = dest_index
+    # def _solve_cell(self, dst_index):
+    #     symb_to_place = self._solved_board[dst_index]
+    #     dst_col_index, dst_row_index = dst_index
     #     current_col_index, current_row_index = np.where(self._board == symb_to_place)
-    #     row_shift = dest_col_index - current_col_index
-    #     col_shift = dest_row_index - current_row_index
-    #     while (current_col_index, current_row_index) != (dest_col_index, dest_row_index):
-    #         if self._is_row_movable(dest_row_index):
+    #     row_shift = dst_col_index - current_col_index
+    #     col_shift = dst_row_index - current_row_index
+    #     while (current_col_index, current_row_index) != (dst_col_index, dst_row_index):
+    #         if self._is_row_movable(dst_row_index):
     #             self._app_move(0, current_row_index, row_shift)
     #             current_row_index += row_shift
-    #         elif self._is_col_movable(dest_col_index):
+    #         elif self._is_col_movable(dst_col_index):
     #             self._app_move(1, current_col_index, col_shift)
     #             current_col_index += col_shift
     #         else:
@@ -79,24 +79,92 @@ class LoopoverPuzzle:
     #     return not np.any(self._is_solved_board[:, col_index])
 
 
-class Rot(list):
-    def __new__(cls, indices):
-        return super().__new__(cls, indices)
+class Rots(list):
+    def __init__(self, rots=None):
+        if rots is None:
+            super().__init__([])
+            return
+
+        super().__init__([Rot(rot) for rot in rots])
+
+    @property
+    def indices(self):
+        indices = set()
+        for rot in self:
+            indices.update(rot)
+        return sorted(indices)
+
+    def simplify(self):
+        self._reorder()
+        self._compress()
+
+    def _to_bis(self):
+        rots_bis = Rots()
+        for rot in self:
+            rots_bis += rot.bis
+        self[:] = rots_bis[:]
+
+    def _reorder(self):
+        self._to_bis()
+
+        min_free_order = 0
+        for index in self.indices:
+            print(f"--> {index}")
+            for order, rot in enumerate(self[min_free_order:], min_free_order):
+                if index not in rot:
+                    continue
+
+                self._move_src_dst(order, min_free_order)
+                min_free_order += 1
+
+    def _compress(self):
+        ...
+
+    def _move_src_dst(self, src_order, dst_order):
+        n_steps = abs(dst_order - src_order)
+        if n_steps == 0:
+            return
+
+        order_shift = (dst_order - src_order) // n_steps
+        for current_order in range(src_order, dst_order, order_shift):
+            self._swap_src_dst(current_order, current_order + order_shift)
+
+    def _swap_src_dst(self, src_order, dst_order):
+        if self[src_order] == self[dst_order]:
+            return
+
+        for i, index in enumerate(self[dst_order]):
+            if index not in self[src_order]:
+                continue
+
+            self[src_order][self[src_order].index(index)] = self[dst_order][i ^ 1]
+
+        self[dst_order], self[src_order] = self[src_order], self[dst_order]
+        print(self)
 
     def __repr__(self):
-        return f"Rot({', '.join(str(index) for index in self)})"
+        return f"Rots([{', '.join(repr(list(index)) for index in self)}])"
+
+
+class Rot(list):
+    @property
+    def bis(self):
+        return self._subdivide(2)
 
     @property
     def tris(self):
-        tris = []
-        for i in range(0, len(self), 2):
-            indices = self[i:i+3]
+        return self._subdivide(3)
+
+    def _subdivide(self, len_):
+        subdivs = Rots()
+        for i in range(0, len(self), len_-1):
+            indices = self[i:i + len_]
             if len(indices) == 1:
                 break
 
-            tris.append(Rot(indices))
+            subdivs.append(Rot(indices))
 
-        return tris
+        return subdivs
 
     def rolled_indices(self, roll):
         rolled_rot = self[:]
@@ -104,8 +172,18 @@ class Rot(list):
             rolled_rot.append(rolled_rot.pop(0))
         return Rot(rolled_rot)
 
-    def __mul__(self, other):
-        rots = []
+    def __eq__(self, other):
+        if len(self) != len(other):
+            return False
+
+        for roll in range(len(self)):
+            if super().__eq__(other.rolled_indices(roll)):
+                return True
+
+        return False
+
+    def __repr__(self):
+        return f"Rot([{', '.join(repr(index) for index in self)}])"
 
 
 class Move(tuple):
@@ -132,15 +210,15 @@ class Move(tuple):
         return cls(axis, index_, shift)
 
     @classmethod
-    def from_src_dest(cls, src_index, dest_index, board_dims):
-        shifts = [dest_axis_index - src_axis_index for src_axis_index, dest_axis_index in zip(src_index, dest_index)]
+    def from_src_dst(cls, src_index, dst_index, board_dims):
+        shifts = [dst_axis_index - src_axis_index for src_axis_index, dst_axis_index in zip(src_index, dst_index)]
 
         if shifts.count(0) == 0:
             raise MoveAmbiguousError
 
         axis = shifts.index(0) ^ 1
         shift = cls._smallest_shift(shifts[axis], board_dims[axis])
-        index_ = dest_index[axis ^ 1]
+        index_ = dst_index[axis ^ 1]
 
         return cls(axis, index_, shift)
 
@@ -191,7 +269,7 @@ class MoveError(Exception):
 class MoveAmbiguousError(MoveError):
     def __init__(self, message=(
                 "There are several distinct ways to achieve this move. \n"
-                "Please let the scr_index and dest_index be equal at least along one axis. "
+                "Please let the scr_index and dst_index be equal at least along one axis. "
                 )):
         super().__init__(message)
 
@@ -213,23 +291,52 @@ def loopover(mixed_up_board, solved_board):
 
 
 if __name__ == "__main__":
+    import random
+
     def board(str_):
         return [list(row) for row in str_.split('\n')]
 
-    test = LoopoverPuzzle(board('ACDBE\nFGHIJ\nKLMNO\nPQRST'), board('ABCDE\nFGHIJ\nKLMNO\nPQRST'))
-    test.draw()
+    # test = LoopoverPuzzle(board('ACDBE\nFGHIJ\nKLMNO\nPQRST'), board('ABCDE\nFGHIJ\nKLMNO\nPQRST'))
+    # test.draw()
+    #
+    # test_move = Move.from_src_dst([3, 0], [3, 1], (4, 4))
+    # print("Move.from_src_dst([3, 0], [3, 1], (4, 4))")
+    # print(test_move)
+    # print(test_move.to_strs())
+    # print()
+    #
+    # test._app_move(test_move)
+    # test.draw()
 
-    test_move = Move.from_src_dest([3, 0], [3, 1], (4, 4))
-    print("Move.from_src_dest([3, 0], [3, 1], (4, 4))")
-    print(test_move)
-    print(test_move.to_strs())
-    print()
+    # r0 = Rot(range(2))
+    # print(r0)
+    # print()
+    #
+    # test_rots = Rots([r0, r0])
+    # test_rots._to_bis()
+    # print(test_rots)
+    # test_rots._move_src_dst(1, 0)
 
-    test._app_move(test_move)
-    test.draw()
+    # r1 = Rot([0, 1, 2])
+    # r2 = Rot([0, 2, 1])
+    # print(r1 == r2)
+    #
+    # r3 = Rot([1, 2, 0])
+    # r4 = Rot([2, 0, 1])
+    # print(r1 == r3 == r4)
 
-    # rot = Rot(list(range(8)))
-    # print(rot)
-    # print(rot.tris)
-    # roll = 1
-    # print(f"roll={roll}: {rot.rolled_indices(roll)}")
+    # test_roll = -1
+    # print(f"roll={test_roll}: {rot.rolled_indices(test_roll)}")
+
+    random.seed(0)
+
+    max_index = 100
+
+    r0 = Rot(set(random.randint(0, max_index) for _ in range(10)))
+    r1 = Rot(set(random.randint(0, max_index) for _ in range(10)))
+    rots = Rots([r0, r1])
+    print(rots)
+    rots._to_bis()
+    print(rots)
+    rots._reorder()
+    print(rots)
