@@ -16,6 +16,9 @@ class LoopoverPuzzle:
             (" ".join(row)) for row in self._board),
             )
 
+    def draw_cell(self, index):
+        print(f"({', '.join(str(i) for i in index)}): {self[index]}")
+
     @property
     def move_strs(self):
         """Return the list of move_strs needed to solve the puzzle. """
@@ -47,6 +50,12 @@ class LoopoverPuzzle:
 
         self._applied_moves.append(move)
 
+    def __getitem__(self, key):
+        return self._board[key]
+
+    def __setitem__(self, key, value):
+        self._board[key] = value
+
     # def _solve_cell(self, dest_index):
     #     symb_to_place = self._solved_board[dest_index]
     #     dest_col_index, dest_row_index = dest_index
@@ -68,6 +77,35 @@ class LoopoverPuzzle:
     #
     # def _is_col_movable(self, col_index):
     #     return not np.any(self._is_solved_board[:, col_index])
+
+
+class Rot(list):
+    def __new__(cls, indices):
+        return super().__new__(cls, indices)
+
+    def __repr__(self):
+        return f"Rot({', '.join(str(index) for index in self)})"
+
+    @property
+    def tris(self):
+        tris = []
+        for i in range(0, len(self), 2):
+            indices = self[i:i+3]
+            if len(indices) == 1:
+                break
+
+            tris.append(Rot(indices))
+
+        return tris
+
+    def rolled_indices(self, roll):
+        rolled_rot = self[:]
+        for _ in range(-roll % len(self)):
+            rolled_rot.append(rolled_rot.pop(0))
+        return Rot(rolled_rot)
+
+    def __mul__(self, other):
+        rots = []
 
 
 class Move(tuple):
@@ -133,15 +171,15 @@ class Move(tuple):
     _letter_to_axis_shift = {
         "R": (0, 1),
         "L": (0, -1),
-        "U": (1, 1),
-        "D": (1, -1),
+        "U": (1, -1),
+        "D": (1, 1),
         }
 
     _axis_shift_to_letter = {
         (0, 1): "R",
         (0, -1): "L",
-        (1, 1): "U",
-        (1, -1): "D",
+        (1, -1): "U",
+        (1, 1): "D",
         }
 
 
@@ -180,8 +218,18 @@ if __name__ == "__main__":
 
     test = LoopoverPuzzle(board('ACDBE\nFGHIJ\nKLMNO\nPQRST'), board('ABCDE\nFGHIJ\nKLMNO\nPQRST'))
     test.draw()
-    print()
 
-    test_move = Move.from_src_dest([3, 0], [3, 2], (4, 4))
+    test_move = Move.from_src_dest([3, 0], [3, 1], (4, 4))
+    print("Move.from_src_dest([3, 0], [3, 1], (4, 4))")
     print(test_move)
     print(test_move.to_strs())
+    print()
+
+    test._app_move(test_move)
+    test.draw()
+
+    # rot = Rot(list(range(8)))
+    # print(rot)
+    # print(rot.tris)
+    # roll = 1
+    # print(f"roll={roll}: {rot.rolled_indices(roll)}")
