@@ -119,12 +119,6 @@ class Rots(list):
             indices.update(rot)
         return sorted(indices)
 
-    def common_indices(self, *orders):
-        if not orders:
-            return set.intersection(*(set(rot) for rot in self))
-
-        return set.intersection(*(set(self[order]) for order in orders))
-
     def simplify(self):
         self._reorder()
         self._compress()
@@ -141,13 +135,21 @@ class Rots(list):
             rots_tris += rot.tris
         self[:] = rots_tris[:]
 
+    def _roll_rot(self, order, roll=1):
+        self[order][:] = self[order].rolled_indices(roll)
+
+    def _common_indices(self, *orders):
+        if not orders:
+            return set.intersection(*(set(rot) for rot in self))
+
+        return set.intersection(*(set(self[order]) for order in orders))
+
     def _reorder(self):
         # TODO: WIP.
         self.to_bis()
 
         min_free_order = 0
         for index_ in self.indices:
-            print(f"--> {index_}")
             for order, rot in enumerate(self[min_free_order:], min_free_order):
                 if index_ not in rot:
                     continue
@@ -165,7 +167,7 @@ class Rots(list):
             del self[order:order+2]
             return
 
-        common_indices = self.common_indices(order, order + 1)
+        common_indices = self._common_indices(order, order + 1)
         if not len(common_indices) == 1:
             raise RotsFuseError
 
@@ -196,8 +198,6 @@ class Rots(list):
 
         transformed_rot = self._remapped_through(self[src_order], self[dst_order], dir_)
         self[dst_order], self[src_order] = transformed_rot, self[dst_order]
-
-        print(self)  # debug
 
     @staticmethod
     def _remapped_through(src_rot, dst_rot, dir_):
