@@ -120,21 +120,30 @@ class Rots(list):
         return sorted(indices)
 
     def common_indices(self, *orders):
-        return set.intersection(*(self[order] for order in orders))
+        if not orders:
+            return set.intersection(*(set(rot) for rot in self))
+
+        return set.intersection(*(set(self[order]) for order in orders))
 
     def simplify(self):
         self._reorder()
         self._compress()
 
-    def _to_bis(self):
+    def to_bis(self):
         rots_bis = Rots()
         for rot in self:
             rots_bis += rot.bis
         self[:] = rots_bis[:]
 
+    def to_tris(self):
+        rots_tris = Rots()
+        for rot in self:
+            rots_tris += rot.tris
+        self[:] = rots_tris[:]
+
     def _reorder(self):
         # TODO: WIP.
-        self._to_bis()
+        self.to_bis()
 
         min_free_order = 0
         for index_ in self.indices:
@@ -148,6 +157,24 @@ class Rots(list):
 
     def _compress(self):
         ...
+
+    def _fuse(self, order):
+        rot_a, rot_b = self[order], self[order + 1]
+        if rot_a == -rot_b:
+            # Case where they cancel each other out.
+            del self[order:order+2]
+            return
+
+        common_indices = self.common_indices(order, order + 1)
+        if not len(common_indices) == 1:
+            raise RotsFuseError
+
+        (common_index, ) = common_indices
+
+        rot_a[:] = rot_a.rolled_indices(len(rot_a) - 1 - rot_a.index(common_index))
+        rot_b[:] = rot_b.rolled_indices(-rot_b.index(common_index))
+        rot_a += rot_b[1:]
+        del self[order + 1]
 
     def _move(self, src_order, dst_order):
         n_steps = abs(dst_order - src_order)
@@ -167,13 +194,13 @@ class Rots(list):
         if self[src_order] == self[dst_order] or not dir_:
             return
 
-        transformed_rot = self._remapped_before_swap(self[src_order], self[dst_order], dir_)
+        transformed_rot = self._remapped_through(self[src_order], self[dst_order], dir_)
         self[dst_order], self[src_order] = transformed_rot, self[dst_order]
 
         print(self)  # debug
 
     @staticmethod
-    def _remapped_before_swap(src_rot, dst_rot, dir_):
+    def _remapped_through(src_rot, dst_rot, dir_):
         if src_rot == dst_rot:
             return src_rot
 
@@ -221,6 +248,9 @@ class Rot(list):
         for _ in range(-roll % len(self)):
             rolled_rot.append(rolled_rot.pop(0))
         return Rot(rolled_rot)
+
+    def __neg__(self):
+        return Rot(list(reversed(self)))
 
     def __eq__(self, other):
         if len(self) != len(other):
@@ -320,6 +350,13 @@ class RotsSwapError(RotsError):
         super().__init__(message)
 
 
+class RotsFuseError(RotsError):
+    def __init__(self, message=(
+            "Can't fuse two rots that don't either have exactly one index in common or cancel each other out."
+            )):
+        super().__init__(message)
+
+
 class RotError(Exception):
     def __init__(self, message="Invalid Rot."):
         super().__init__(message)
@@ -332,9 +369,9 @@ class MoveError(Exception):
 
 class MoveAmbiguousError(MoveError):
     def __init__(self, message=(
-                "There are several distinct ways to achieve this move. \n"
-                "Please let the scr_index and dst_index be equal at least along one axis. "
-                )):
+            "There are several distinct ways to achieve this move. \n"
+            "Please let the scr_index and dst_index be equal at least along one axis. "
+            )):
         super().__init__(message)
 
 
