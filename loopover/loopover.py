@@ -1,3 +1,5 @@
+import random
+
 import numpy as np
 
 
@@ -84,6 +86,10 @@ class DummyPuzzle:
     def __init__(self, board):
         self._board = list(board)
 
+    @classmethod
+    def from_range(cls, len_=10):
+        return cls(range(len_))
+
     def rot(self, rots):
         for rot in rots:
             transformed_board = list(self._board)
@@ -103,6 +109,9 @@ class DummyPuzzle:
     def __setitem__(self, key, value):
         self._board[key] = value
 
+    def __eq__(self, other):
+        return self._board == other._board
+
 
 class Rots(list):
     def __init__(self, rots=None):
@@ -111,6 +120,12 @@ class Rots(list):
             return
 
         super().__init__([Rot(rot) for rot in rots])
+
+    @classmethod
+    def from_random(cls, n_rots=1, max_n_rots=None, *, max_index=10, max_len=10):
+        if max_n_rots is not None:
+            n_rots = random.randint(n_rots, max_n_rots)
+        return cls([Rot.from_random(max_index, max_len) for _ in range(n_rots)])
 
     @property
     def indices(self):
@@ -123,10 +138,21 @@ class Rots(list):
         self._reorder()
         self._compress()
 
-    def to_bis(self):
+    def randomize_order(self):
+        src_orders = list(range(len(self)))
+        dst_orders = list(src_orders)
+        random.shuffle(src_orders)
+        random.shuffle(dst_orders)
+        for src_order, dst_order in zip(src_orders, dst_orders):
+            self._move(src_order, dst_order)
+
+    def to_bis(self, order_to_bis=None):
         rots_bis = Rots()
-        for rot in self:
-            rots_bis += rot.bis
+        for order, rot in enumerate(self):
+            if order_to_bis is None or order == order_to_bis:
+                rots_bis += rot.bis
+            else:
+                rots_bis.append(rot)
         self[:] = rots_bis[:]
 
     def to_tris(self):
@@ -160,32 +186,46 @@ class Rots(list):
     def _compress(self):
         ...
 
-    def _fuse(self, order):
-        rot_a, rot_b = self[order], self[order + 1]
+    def _fuse(self, order=0, order_b=None):
+        if order_b is None:
+            order_b = order + 1
+
+        rot_a, rot_b = self[order], self[order_b]
+
         if rot_a == -rot_b:
             # Case where they cancel each other out.
+            self._move_back(order_b, order + 1)
             del self[order:order+2]
             return
 
-        common_indices = self._common_indices(order, order + 1)
+        common_indices = self._common_indices(order, order_b)
         if not len(common_indices) == 1:
             raise RotsFuseError
 
         (common_index, ) = common_indices
 
+        self._move_back(order_b, order + 1)
+
         rot_a[:] = rot_a.rolled_indices(len(rot_a) - 1 - rot_a.index(common_index))
         rot_b[:] = rot_b.rolled_indices(-rot_b.index(common_index))
         rot_a += rot_b[1:]
+
         del self[order + 1]
 
-    def _move(self, src_order, dst_order):
+    def _move_back(self, src_order, dst_order):
+        self._move(src_order, dst_order, is_front=False)
+
+    def _move(self, src_order, dst_order, *, is_front=True):
         n_steps = abs(dst_order - src_order)
         if n_steps == 0:
             return
 
         order_shift = (dst_order - src_order) // n_steps
         for current_order in range(src_order, dst_order, order_shift):
-            self._swap(current_order, current_order + order_shift)
+            if is_front:
+                self._swap(current_order, current_order + order_shift)
+            else:
+                self._swap(current_order + order_shift, current_order)
 
     def _swap(self, src_order, dst_order):
         dir_ = dst_order - src_order
@@ -223,6 +263,20 @@ class Rot(list):
             raise RotError
 
         super().__init__(indices)
+
+    @classmethod
+    def from_random(cls, max_index=10, max_len=10):
+        max_len = min(max_len, max_index)
+        len_ = random.randint(2, max_len)
+        rot = []
+        while len(rot) < len_:
+            index_ = random.randint(0, max_index - 1)
+            if index_ in rot:
+                continue
+
+            rot.append(index_)
+
+        return cls(rot)
 
     @property
     def bis(self):
@@ -394,10 +448,10 @@ def loopover(mixed_up_board, solved_board):
 if __name__ == "__main__":
     import random
 
-    def board(str_):
+    def board_form_str(str_):
         return [list(row) for row in str_.split('\n')]
 
-    # test = LoopoverPuzzle(board('ACDBE\nFGHIJ\nKLMNO\nPQRST'), board('ABCDE\nFGHIJ\nKLMNO\nPQRST'))
+    # test = LoopoverPuzzle(board_form_str('ACDBE\nFGHIJ\nKLMNO\nPQRST'), board_form_str('ABCDE\nFGHIJ\nKLMNO\nPQRST'))
     # test.draw()
     #
     # test_move = Move.from_src_dst([3, 0], [3, 1], (4, 4))
@@ -431,10 +485,8 @@ if __name__ == "__main__":
 
     random.seed(0)
 
-    max_index = 100
-
-    r0 = Rot(set(random.randint(0, max_index) for _ in range(10)))
-    r1 = Rot(set(random.randint(0, max_index) for _ in range(10)))
+    r0 = Rot(set(random.randint(0, 100) for _ in range(10)))
+    r1 = Rot(set(random.randint(0, 100) for _ in range(10)))
     test_rots = Rots([r0, r1])
     print(test_rots)
     test_rots._to_bis()
