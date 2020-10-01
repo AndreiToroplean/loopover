@@ -143,7 +143,7 @@ class RotComp(list):
         random.shuffle(src_orders)
         random.shuffle(dst_orders)
         for src_order, dst_order in zip(src_orders, dst_orders):
-            self._move(src_order, dst_order)
+            self.move(src_order, dst_order)
 
     def to_bis(self, order_to_bis=None):
         rots_bis = RotComp()
@@ -173,7 +173,7 @@ class RotComp(list):
 
         return set.intersection(*(set(self[order]) for order in orders))
 
-    def _compress(self):
+    def compress(self):
         groups, cycles = self._find_groups_and_cycles()
         for group, group_cycles in zip(groups, cycles):
             for cycle in group_cycles:
@@ -232,7 +232,12 @@ class RotComp(list):
     def reset_ids(self):
         self._ids = list(range(len(self)))
 
-    def _fuse(self, order=0, order_b=None):
+    def fuse(self, order=0, order_b=None, *, use_ids=False):
+        if use_ids:
+            order = self._order_from_id(order)
+            if order_b is not None:
+                order_b = self._order_from_id(order_b)
+
         if order_b is None:
             order_b = order + 1
 
@@ -240,7 +245,7 @@ class RotComp(list):
 
         if rot_a == -rot_b:
             # Case where they cancel each other out.
-            self._move_back(order_b, order + 1)
+            self.move_back(order_b, order + 1)
             del self[order:order+2]
             return
 
@@ -250,7 +255,7 @@ class RotComp(list):
 
         common_index = common_indices.pop()
 
-        self._move_back(order_b, order + 1)
+        self.move_back(order_b, order + 1)
 
         rot_a[:] = rot_a.roll(len(rot_a) - 1 - rot_a.index(common_index))
         rot_b[:] = rot_b.roll(-rot_b.index(common_index))
@@ -260,10 +265,14 @@ class RotComp(list):
 
         del self._ids[order + 1]
 
-    def _move_back(self, src_order, dst_order):
-        self._move(src_order, dst_order, is_front=False)
+    def move_back(self, src_order, dst_order, *, use_ids=False):
+        self.move(src_order, dst_order, is_front=False, use_ids=use_ids)
 
-    def _move(self, src_order, dst_order, *, is_front=True):
+    def move(self, src_order, dst_order, *, is_front=True, use_ids=False):
+        if use_ids:
+            src_order = self._order_from_id(src_order)
+            dst_order = self._order_from_id(dst_order)
+
         n_steps = abs(dst_order - src_order)
         if n_steps == 0:
             return
@@ -284,13 +293,15 @@ class RotComp(list):
         if self[src_order] == self[dst_order] or not dir_:
             return
 
-        transformed_rot = self._remapped_through(self[src_order], self[dst_order], dir_)
+        transformed_rot = self._remapped_through(src_order, dst_order)
         self[dst_order], self[src_order] = transformed_rot, self[dst_order]
 
         self._ids[dst_order], self._ids[src_order] = self._ids[src_order], self._ids[dst_order]
 
-    @staticmethod
-    def _remapped_through(src_rot, dst_rot, dir_):
+    def _remapped_through(self, src_order, dst_order):
+        dir_ = dst_order - src_order
+
+        src_rot, dst_rot = self[src_order], self[dst_order]
         if src_rot == dst_rot:
             return src_rot
 
@@ -303,20 +314,23 @@ class RotComp(list):
 
         return remapped_rot
 
-    def print_with_orders(self, *, from_ids=False):
+    def _order_from_id(self, id):
+        return self._ids.index(id)
+
+    def print_with_orders(self, *, use_ids=False):
         str_rot_comp = repr(self)
         str_before_list = f"{self.__class__.__name__}(["
         len_before_list = len(str_before_list)
         str_orders = " " * (len_before_list + 1)
         str_list = str_rot_comp[len_before_list:]
         for order, str_rot in enumerate(str_list.split("[")[1:]):
-            str_order = str(self._ids[order] if from_ids else order)
+            str_order = str(self._ids[order] if use_ids else order)
             str_orders += str_order + " " * (len(str_rot) - len(str_order) + 1)
         print(str_rot_comp)
         print(str_orders)
 
     def print_with_ids(self):
-        self.print_with_orders(from_ids=True)
+        self.print_with_orders(use_ids=True)
 
     def repr_with_ids(self):
         return self.__repr__(with_ids=True)
@@ -560,7 +574,7 @@ if __name__ == "__main__":
     print()
 
     for dst_order, src_order in enumerate(co):
-        rt._move_back(src_order, dst_order)
+        rt.move_back(src_order, dst_order)
 
     rt.print_with_ids()
     print()
