@@ -326,9 +326,6 @@ class RotComp(list):
 
         return remapped_rot
 
-    def _order_from_id(self, id):
-        return self._ids.index(id)
-
     def print_with_orders(self, *, use_ids=False):
         str_rot_comp = repr(self)
         str_before_list = f"{self.__class__.__name__}(["
@@ -336,7 +333,7 @@ class RotComp(list):
         str_orders = " " * (len_before_list + 1)
         str_list = str_rot_comp[len_before_list:]
         for order, str_rot in enumerate(str_list.split("[")[1:]):
-            str_order = str(self._ids[order] if use_ids else order)
+            str_order = str(self._id_from_order(order) if use_ids else order)
             str_orders += str_order + " " * (len(str_rot) - len(str_order) + 1)
         print(str_rot_comp)
         print(str_orders)
@@ -346,6 +343,12 @@ class RotComp(list):
 
     def repr_with_ids(self):
         return self.__repr__(with_ids=True)
+
+    def _order_from_id(self, id_):
+        return self._ids.index(id_)
+
+    def _id_from_order(self, order):
+        return self._ids[order]
 
     def __repr__(self, *, with_ids=False):
         str_ids = f", ids={self._ids}" if with_ids else ""
