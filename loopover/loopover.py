@@ -120,8 +120,14 @@ class RotComp(list):
         else:
             super().__init__([Rot(rot) for rot in rots])
 
-        self._ids = ids
-        if self._ids is None:
+        if ids is not None:
+            if len(set(ids)) < len(ids):
+                raise RotCompIdsError
+
+            self._ids = ids[:len(self)]
+            min_available_id = self._min_available_id
+            self._ids += list(range(min_available_id, min_available_id + len(self) - len(self._ids)))
+        else:
             if isinstance(rots, RotComp):
                 self._ids = rots._ids
             else:
@@ -139,6 +145,10 @@ class RotComp(list):
         for rot in self:
             indices.update(rot)
         return sorted(indices)
+
+    @property
+    def _min_available_id(self):
+        return max(self._ids) + 1
 
     def randomize_order(self):
         src_orders = list(range(len(self)))
@@ -160,7 +170,7 @@ class RotComp(list):
 
         new_rot_comp = RotComp()
         new_ids = []
-        min_available_id = max(self._ids) + 1
+        min_available_id = self._min_available_id
 
         for order_, (rot, id_) in enumerate(zip(self, self._ids)):
             new_ids.append(id_)
@@ -263,7 +273,7 @@ class RotComp(list):
 
         common_indices = self._common_indices(src_order, dst_order)
         if not len(common_indices) == 1:
-            raise RotsFuseError
+            raise RotCompFuseError
 
         common_index = common_indices.pop()
 
@@ -303,7 +313,7 @@ class RotComp(list):
         dir_ = dst_order - src_order
 
         if abs(dir_) > 1:
-            raise RotsSwapError
+            raise RotCompSwapError
 
         if self[src_order] == self[dst_order] or not dir_:
             return
@@ -373,7 +383,7 @@ class RotComp(list):
 
 class Rot(list):
     def __init__(self, indices):
-        if len(set(indices)) < len(indices):
+        if not(len(set(indices)) == len(indices) >= 2):
             raise RotError
 
         super().__init__(indices)
@@ -524,16 +534,21 @@ class Move(tuple):
         }
 
 
-class RotsError(Exception):
+class RotCompError(Exception):
     pass
 
 
-class RotsSwapError(RotsError):
+class RotCompIdsError(RotCompError):
+    def __init__(self, message="There are duplicates in the given ids, when they must be unique."):
+        super().__init__(message)
+
+
+class RotCompSwapError(RotCompError):
     def __init__(self, message="Can't swap two rots that aren't immediately consecutive."):
         super().__init__(message)
 
 
-class RotsFuseError(RotsError):
+class RotCompFuseError(RotCompError):
     def __init__(self, message=(
             "Can't fuse two rots that don't either have exactly one index in common or cancel each other out."
             )):
