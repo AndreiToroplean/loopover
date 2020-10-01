@@ -114,15 +114,15 @@ class DummyPuzzle:
 
 
 class RotComp(list):
-    def __init__(self, rots=None):
+    def __init__(self, rots=None, *, ids=None):
         if rots is None:
             super().__init__([])
-            return
+        else:
+            super().__init__([Rot(rot) for rot in rots])
 
-        super().__init__([Rot(rot) for rot in rots])
-
-        self._ids = None
-        self.reset_ids()
+        self._ids = ids
+        if self._ids is None:
+            self.reset_ids()
 
     @classmethod
     def from_random(cls, n_rots=1, max_n_rots=None, *, max_index=10, max_len=10):
@@ -318,13 +318,19 @@ class RotComp(list):
     def print_with_ids(self):
         self.print_with_orders(from_ids=True)
 
-    def __repr__(self):
-        return f"{self.__class__.__name__}([{', '.join(repr(list(index_)) for index_ in self)}])"
+    def repr_with_ids(self):
+        return self.__repr__(with_ids=True)
+
+    def __repr__(self, *, with_ids=False):
+        str_ids = f", ids={self._ids}" if with_ids else ""
+        return f"{self.__class__.__name__}([{', '.join(repr(list(index_)) for index_ in self)}]{str_ids})"
 
     def __getitem__(self, key):
         super_rtn = super().__getitem__(key)
         if isinstance(key, slice):
-            return RotComp(super_rtn)
+            new_rot = RotComp(super_rtn)
+            new_rot._ids = self._ids[key]
+            return new_rot
 
         return super_rtn
 
@@ -557,4 +563,6 @@ if __name__ == "__main__":
         rt._move_back(src_order, dst_order)
 
     rt.print_with_ids()
+    print()
+    print(rt.repr_with_ids())
     print()
