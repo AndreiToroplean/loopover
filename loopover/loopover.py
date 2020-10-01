@@ -121,6 +121,9 @@ class RotComp(list):
 
         super().__init__([Rot(rot) for rot in rots])
 
+        self._ids = None
+        self.reset_ids()
+
     @classmethod
     def from_random(cls, n_rots=1, max_n_rots=None, *, max_index=10, max_len=10):
         if max_n_rots is not None:
@@ -151,11 +154,15 @@ class RotComp(list):
                 rots_bis.append(rot)
         self[:] = rots_bis[:]
 
+        self.reset_ids()
+
     def to_tris(self):
         rots_tris = RotComp()
         for rot in self:
             rots_tris += rot.tris
         self[:] = rots_tris[:]
+
+        self.reset_ids()
 
     def _roll_rot(self, order, roll=1):
         self[order][:] = self[order].rolled_indices(roll)
@@ -168,68 +175,62 @@ class RotComp(list):
 
     def _compress(self):
         groups, cycles = self._find_groups_and_cycles()
+        for group, group_cycles in zip(groups, cycles):
+            for cycle in group_cycles:
+                ...
 
     def _find_groups_and_cycles(self):
         self.to_bis()
-        orders_to_visit = set(range(len(self)))
         groups = []
         cycles = []
-        while orders_to_visit:
-            order = orders_to_visit.pop()
-            orders = [order]
-            indices = list(self[order])
-            group, group_cycles = self._analyse_dependencies(orders, indices)
-            print(order)
-            print(group, group_cycles)
+        visited_indices = set()
+        for index in self.indices:
+            if index in visited_indices:
+                continue
+            group, group_cycles = self._analyse_dependencies(orders=[], indices=[index])
+            visited_indices.update(group)
             groups.append(group)
             cycles.append(group_cycles)
-            orders_to_visit -= group
 
         return groups, cycles
 
     def _analyse_dependencies(self, orders, indices):
         """Only works on RotComps made out of bis. """
-        group = set(orders)
+        group = []
         group_cycles = []
+
+        active_index = indices[-1]
+
         for order, rot in enumerate(self):
-            if order in orders:
+            if order in orders or any(order in cycle for cycle in group_cycles):
                 continue
 
-            active_indices = indices[0], indices[-1]
-
             for roll in rot.all_rolls:
-                for i, active_index in enumerate(active_indices):
-                    if active_index is None:
-                        continue
+                if active_index == roll[0]:
+                    break
+            else:
+                continue
 
-                    if active_index == roll[0]:
-                        # Found new group member.
-                        new_index = roll[-1]
-                        group.add(order)
-                        if i == 0:
-                            orders.insert(0, order)
-                            indices.insert(0, new_index)
-                            if new_index in indices[1:]:
-                                # Found cycle.
-                                group_cycles.append(orders[:indices[1:].index(new_index)])
-                                orders.insert(0, None)
-                                indices.insert(0, None)
+            group.append(order)
+            new_index = roll[-1]
 
-                        else:
-                            orders.append(order)
-                            indices.append(new_index)
-                            if new_index in indices[:-2]:
-                                # Found cycle.
-                                group_cycles.append(orders[indices[:-2].index(new_index):])
-                                orders.append(None)
-                                indices.append(None)
+            new_orders = orders + [order]
+            new_indices = indices + [new_index]
 
-                        desc_group, desc_group_cycles = self._analyse_dependencies(orders, indices)
+            found_cycle = new_index in indices
+            if found_cycle:
+                group_cycles.append(new_orders[indices.index(new_index):])
+                continue
 
-                        group.update(desc_group)
-                        group_cycles += desc_group_cycles
+            desc_group, desc_group_cycles = self._analyse_dependencies(new_orders, new_indices)
+
+            group += desc_group
+            group_cycles += desc_group_cycles
 
         return group, group_cycles
+
+    def reset_ids(self):
+        self._ids = list(range(len(self)))
 
     def _fuse(self, order=0, order_b=None):
         if order_b is None:
@@ -256,6 +257,8 @@ class RotComp(list):
         rot_a += rot_b[1:]
 
         del self[order + 1]
+
+        del self._ids[order + 1]
 
     def _move_back(self, src_order, dst_order):
         self._move(src_order, dst_order, is_front=False)
@@ -284,6 +287,8 @@ class RotComp(list):
         transformed_rot = self._remapped_through(self[src_order], self[dst_order], dir_)
         self[dst_order], self[src_order] = transformed_rot, self[dst_order]
 
+        self._ids[dst_order], self._ids[src_order] = self._ids[src_order], self._ids[dst_order]
+
     @staticmethod
     def _remapped_through(src_rot, dst_rot, dir_):
         if src_rot == dst_rot:
@@ -298,8 +303,30 @@ class RotComp(list):
 
         return remapped_rot
 
+    def print_with_orders(self, *, from_ids=False):
+        str_rot_comp = repr(self)
+        str_before_list = f"{self.__class__.__name__}(["
+        len_before_list = len(str_before_list)
+        str_orders = " " * (len_before_list + 1)
+        str_list = str_rot_comp[len_before_list:]
+        for order, str_rot in enumerate(str_list.split("[")[1:]):
+            str_order = str(self._ids[order] if from_ids else order)
+            str_orders += str_order + " " * (len(str_rot) - len(str_order) + 1)
+        print(str_rot_comp)
+        print(str_orders)
+
+    def print_with_ids(self):
+        self.print_with_orders(from_ids=True)
+
     def __repr__(self):
         return f"{self.__class__.__name__}([{', '.join(repr(list(index_)) for index_ in self)}])"
+
+    def __getitem__(self, key):
+        super_rtn = super().__getitem__(key)
+        if isinstance(key, slice):
+            return RotComp(super_rtn)
+
+        return super_rtn
 
 
 class Rot(list):
@@ -335,8 +362,8 @@ class Rot(list):
     def all_rolls(self):
         roll = Rot(self)
         for _ in range(len(self)):
-            roll.append(roll.pop(0))
             yield roll
+            roll.append(roll.pop(0))
             roll = Rot(roll)
 
     def roll(self, roll_amount=1):
@@ -371,6 +398,13 @@ class Rot(list):
 
     def __repr__(self):
         return f"{self.__class__.__name__}([{', '.join(repr(index_) for index_ in self)}])"
+
+    def __getitem__(self, key):
+        super_rtn = super().__getitem__(key)
+        if isinstance(key, slice):
+            return Rot(super_rtn)
+
+        return super_rtn
 
 
 class Move(tuple):
@@ -503,5 +537,24 @@ if __name__ == "__main__":
     def board_form_str(str_):
         return [list(row) for row in str_.split('\n')]
 
-    # test = LoopoverPuzzle(board_form_str('ACDBE\nFGHIJ\nKLMNO\nPQRST'), board_form_str('ABCDE\nFGHIJ\nKLMNO\nPQRST'))
-    # test.draw()
+    def print_cycle(rot_comp, cycle):
+        for order in cycle:
+            print(rt[order])
+
+    rt = RotComp([[0, 11], [8, 12], [1, 16], [13, 23], [31, 10], [21, 4], [3, 14], [9, 15], [14, 22], [21, 25], [3, 30], [4, 30], [31, 27], [24, 4], [30, 5], [8, 21], [14, 12], [1, 12], [7, 30], [30, 12], [4, 26], [18, 22], [20, 13], [11, 24], [26, 1], [11, 21], [26, 20], [3, 29], [30, 12], [0, 30], [16, 2], [29, 17], [30, 15], [12, 22], [24, 10], [1, 15], [26, 9], [20, 0], [0, 13], [2, 28], [26, 4], [30, 27], [9, 1], [2, 13], [17, 12], [21, 28], [23, 8], [11, 2], [27, 13]])
+    groups, cycles = rt._find_groups_and_cycles()
+    c = cycles[0][0]
+    co = list(sorted(c))
+
+    rt.print_with_ids()
+    print(c)
+    print(co)
+    print()
+    print_cycle(rt, c)
+    print()
+
+    for dst_order, src_order in enumerate(co):
+        rt._move_back(src_order, dst_order)
+
+    rt.print_with_ids()
+    print()
