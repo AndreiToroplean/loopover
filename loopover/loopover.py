@@ -122,7 +122,10 @@ class RotComp(list):
 
         self._ids = ids
         if self._ids is None:
-            self.reset_ids()
+            if isinstance(rots, RotComp):
+                self._ids = rots._ids
+            else:
+                self.reset_ids()
 
     @classmethod
     def from_random(cls, n_rots=1, max_n_rots=None, *, max_index=10, max_len=10):
@@ -145,24 +148,33 @@ class RotComp(list):
         for src_order, dst_order in zip(src_orders, dst_orders):
             self.move(src_order, dst_order)
 
-    def to_bis(self, order_to_bis=None):
-        rots_bis = RotComp()
-        for order, rot in enumerate(self):
-            if order_to_bis is None or order == order_to_bis:
-                rots_bis += rot.bis
+    def to_bis(self, order=None, *, use_ids=False):
+        self._subdivide(2, order, use_ids=use_ids)
+
+    def to_tris(self, order=None, *, use_ids=False):
+        self._subdivide(3, order, use_ids=use_ids)
+
+    def _subdivide(self, len_, order=None, *, use_ids=False):
+        if use_ids:
+            order = self._order_from_id(order)
+
+        new_rot_comp = RotComp()
+        new_ids = []
+        min_available_id = max(self._ids) + 1
+
+        for order_, (rot, id_) in enumerate(zip(self, self._ids)):
+            new_ids.append(id_)
+            if order is None or order_ == order:
+                subdivs = rot.subdivide(len_)
+                new_rot_comp += subdivs
+                for _ in range(len(subdivs) - 1):
+                    new_ids.append(min_available_id)
+                    min_available_id += 1
             else:
-                rots_bis.append(rot)
-        self[:] = rots_bis[:]
+                new_rot_comp.append(rot)
+        self[:] = new_rot_comp[:]
 
-        self.reset_ids()
-
-    def to_tris(self):
-        rots_tris = RotComp()
-        for rot in self:
-            rots_tris += rot.tris
-        self[:] = rots_tris[:]
-
-        self.reset_ids()
+        self._ids = new_ids
 
     def _roll_rot(self, order, roll=1):
         self[order][:] = self[order].rolled_indices(roll)
@@ -372,11 +384,11 @@ class Rot(list):
 
     @property
     def bis(self):
-        return self._subdivide(2)
+        return self.subdivide(2)
 
     @property
     def tris(self):
-        return self._subdivide(3)
+        return self.subdivide(3)
 
     @property
     def all_rolls(self):
@@ -392,7 +404,7 @@ class Rot(list):
             roll.append(roll.pop(0))
         return Rot(roll)
 
-    def _subdivide(self, len_):
+    def subdivide(self, len_):
         subdivs = RotComp()
         for i in range(0, len(self), len_-1):
             indices = self[i:i + len_]
