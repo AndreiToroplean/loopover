@@ -93,7 +93,7 @@ class DummyPuzzle:
     def rot(self, rots):
         for rot in rots:
             transformed_board = list(self._board)
-            for src_index, dst_index in zip(rot, rot.rolled_indices(-1)):
+            for src_index, dst_index in zip(rot, rot.roll(-1)):
                 transformed_board[self._board.index(dst_index)] = self[self._board.index(src_index)]
             self._board = transformed_board
 
@@ -113,7 +113,7 @@ class DummyPuzzle:
         return self._board == other._board
 
 
-class Rots(list):
+class RotComp(list):
     def __init__(self, rots=None):
         if rots is None:
             super().__init__([])
@@ -134,10 +134,6 @@ class Rots(list):
             indices.update(rot)
         return sorted(indices)
 
-    def simplify(self):
-        self._reorder()
-        self._compress()
-
     def randomize_order(self):
         src_orders = list(range(len(self)))
         dst_orders = list(src_orders)
@@ -147,7 +143,7 @@ class Rots(list):
             self._move(src_order, dst_order)
 
     def to_bis(self, order_to_bis=None):
-        rots_bis = Rots()
+        rots_bis = RotComp()
         for order, rot in enumerate(self):
             if order_to_bis is None or order == order_to_bis:
                 rots_bis += rot.bis
@@ -156,7 +152,7 @@ class Rots(list):
         self[:] = rots_bis[:]
 
     def to_tris(self):
-        rots_tris = Rots()
+        rots_tris = RotComp()
         for rot in self:
             rots_tris += rot.tris
         self[:] = rots_tris[:]
@@ -170,21 +166,70 @@ class Rots(list):
 
         return set.intersection(*(set(self[order]) for order in orders))
 
-    def _reorder(self):
-        # TODO: WIP.
-        self.to_bis()
-
-        min_free_order = 0
-        for index_ in self.indices:
-            for order, rot in enumerate(self[min_free_order:], min_free_order):
-                if index_ not in rot:
-                    continue
-
-                self._move(order, min_free_order)
-                min_free_order += 1
-
     def _compress(self):
-        ...
+        groups, cycles = self._find_groups_and_cycles()
+
+    def _find_groups_and_cycles(self):
+        self.to_bis()
+        orders_to_visit = set(range(len(self)))
+        groups = []
+        cycles = []
+        while orders_to_visit:
+            order = orders_to_visit.pop()
+            orders = [order]
+            indices = list(self[order])
+            group, group_cycles = self._analyse_dependencies(orders, indices)
+            print(order)
+            print(group, group_cycles)
+            groups.append(group)
+            cycles.append(group_cycles)
+            orders_to_visit -= group
+
+        return groups, cycles
+
+    def _analyse_dependencies(self, orders, indices):
+        """Only works on RotComps made out of bis. """
+        group = set(orders)
+        group_cycles = []
+        for order, rot in enumerate(self):
+            if order in orders:
+                continue
+
+            active_indices = indices[0], indices[-1]
+
+            for roll in rot.all_rolls:
+                for i, active_index in enumerate(active_indices):
+                    if active_index is None:
+                        continue
+
+                    if active_index == roll[0]:
+                        # Found new group member.
+                        new_index = roll[-1]
+                        group.add(order)
+                        if i == 0:
+                            orders.insert(0, order)
+                            indices.insert(0, new_index)
+                            if new_index in indices[1:]:
+                                # Found cycle.
+                                group_cycles.append(orders[:indices[1:].index(new_index)])
+                                orders.insert(0, None)
+                                indices.insert(0, None)
+
+                        else:
+                            orders.append(order)
+                            indices.append(new_index)
+                            if new_index in indices[:-2]:
+                                # Found cycle.
+                                group_cycles.append(orders[indices[:-2].index(new_index):])
+                                orders.append(None)
+                                indices.append(None)
+
+                        desc_group, desc_group_cycles = self._analyse_dependencies(orders, indices)
+
+                        group.update(desc_group)
+                        group_cycles += desc_group_cycles
+
+        return group, group_cycles
 
     def _fuse(self, order=0, order_b=None):
         if order_b is None:
@@ -202,12 +247,12 @@ class Rots(list):
         if not len(common_indices) == 1:
             raise RotsFuseError
 
-        (common_index, ) = common_indices
+        common_index = common_indices.pop()
 
         self._move_back(order_b, order + 1)
 
-        rot_a[:] = rot_a.rolled_indices(len(rot_a) - 1 - rot_a.index(common_index))
-        rot_b[:] = rot_b.rolled_indices(-rot_b.index(common_index))
+        rot_a[:] = rot_a.roll(len(rot_a) - 1 - rot_a.index(common_index))
+        rot_b[:] = rot_b.roll(-rot_b.index(common_index))
         rot_a += rot_b[1:]
 
         del self[order + 1]
@@ -254,7 +299,7 @@ class Rots(list):
         return remapped_rot
 
     def __repr__(self):
-        return f"Rots([{', '.join(repr(list(index_)) for index_ in self)}])"
+        return f"{self.__class__.__name__}([{', '.join(repr(list(index_)) for index_ in self)}])"
 
 
 class Rot(list):
@@ -286,8 +331,22 @@ class Rot(list):
     def tris(self):
         return self._subdivide(3)
 
+    @property
+    def all_rolls(self):
+        roll = Rot(self)
+        for _ in range(len(self)):
+            roll.append(roll.pop(0))
+            yield roll
+            roll = Rot(roll)
+
+    def roll(self, roll_amount=1):
+        roll = Rot(self)
+        for _ in range(-roll_amount % len(self)):
+            roll.append(roll.pop(0))
+        return Rot(roll)
+
     def _subdivide(self, len_):
-        subdivs = Rots()
+        subdivs = RotComp()
         for i in range(0, len(self), len_-1):
             indices = self[i:i + len_]
             if len(indices) == 1:
@@ -297,12 +356,6 @@ class Rot(list):
 
         return subdivs
 
-    def rolled_indices(self, roll=1):
-        rolled_rot = Rot(self)
-        for _ in range(-roll % len(self)):
-            rolled_rot.append(rolled_rot.pop(0))
-        return Rot(rolled_rot)
-
     def __neg__(self):
         return Rot(list(reversed(self)))
 
@@ -310,14 +363,14 @@ class Rot(list):
         if len(self) != len(other):
             return False
 
-        for roll in range(len(self)):
-            if super().__eq__(other.rolled_indices(roll)):
+        for other_roll in other.all_rolls:
+            if super().__eq__(other_roll):
                 return True
 
         return False
 
     def __repr__(self):
-        return f"Rot([{', '.join(repr(index_) for index_ in self)}])"
+        return f"{self.__class__.__name__}([{', '.join(repr(index_) for index_ in self)}])"
 
 
 class Move(tuple):
@@ -446,50 +499,9 @@ def loopover(mixed_up_board, solved_board):
 
 
 if __name__ == "__main__":
-    import random
 
     def board_form_str(str_):
         return [list(row) for row in str_.split('\n')]
 
     # test = LoopoverPuzzle(board_form_str('ACDBE\nFGHIJ\nKLMNO\nPQRST'), board_form_str('ABCDE\nFGHIJ\nKLMNO\nPQRST'))
     # test.draw()
-    #
-    # test_move = Move.from_src_dst([3, 0], [3, 1], (4, 4))
-    # print("Move.from_src_dst([3, 0], [3, 1], (4, 4))")
-    # print(test_move)
-    # print(test_move.to_strs())
-    # print()
-    #
-    # test._app_move(test_move)
-    # test.draw()
-
-    # r0 = Rot(range(2))
-    # print(r0)
-    # print()
-    #
-    # test_rots = Rots([r0, r0])
-    # test_rots._to_bis()
-    # print(test_rots)
-    # test_rots._move(1, 0)
-
-    # r1 = Rot([0, 1, 2])
-    # r2 = Rot([0, 2, 1])
-    # print(r1 == r2)
-    #
-    # r3 = Rot([1, 2, 0])
-    # r4 = Rot([2, 0, 1])
-    # print(r1 == r3 == r4)
-
-    # test_roll = -1
-    # print(f"roll={test_roll}: {rot.rolled_indices(test_roll)}")
-
-    random.seed(0)
-
-    r0 = Rot(set(random.randint(0, 100) for _ in range(10)))
-    r1 = Rot(set(random.randint(0, 100) for _ in range(10)))
-    test_rots = Rots([r0, r1])
-    print(test_rots)
-    test_rots._to_bis()
-    print(test_rots)
-    test_rots._reorder()
-    print(test_rots)
