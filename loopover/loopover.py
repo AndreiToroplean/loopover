@@ -176,8 +176,8 @@ class RotComp(list):
 
         self._ids = new_ids
 
-    def _roll_rot(self, order, roll=1):
-        self[order][:] = self[order].rolled_indices(roll)
+    def _roll_rot(self, order, roll_amount=1):
+        self[order][:] = self[order].roll(roll_amount)
 
     def _common_indices(self, *orders):
         if not orders:
@@ -200,7 +200,8 @@ class RotComp(list):
             if index in visited_indices:
                 continue
             group, group_cycles = self._analyse_dependencies(orders=[], indices=[index])
-            visited_indices.update(group)
+            for order in group:
+                visited_indices.update(self[order])
             groups.append(group)
             cycles.append(group_cycles)
 
@@ -244,46 +245,48 @@ class RotComp(list):
     def reset_ids(self):
         self._ids = list(range(len(self)))
 
-    def fuse(self, order=0, order_b=None, *, use_ids=False):
+    def fuse(self, src_order=0, dst_order=None, *, use_ids=False):
         if use_ids:
-            order = self._order_from_id(order)
-            if order_b is not None:
-                order_b = self._order_from_id(order_b)
+            src_order = self._order_from_id(src_order)
+            dst_order = self._order_from_id(dst_order)
 
-        if order_b is None:
-            order_b = order + 1
+        if dst_order is None:
+            dst_order = src_order + 1
 
-        rot_a, rot_b = self[order], self[order_b]
+        rot_a, rot_b = self[src_order], self[dst_order]
 
         if rot_a == -rot_b:
             # Case where they cancel each other out.
-            self.move_back(order_b, order + 1)
-            del self[order:order+2]
+            self.move_back(dst_order, src_order + 1)
+            del self[src_order:src_order + 2]
             return
 
-        common_indices = self._common_indices(order, order_b)
+        common_indices = self._common_indices(src_order, dst_order)
         if not len(common_indices) == 1:
             raise RotsFuseError
 
         common_index = common_indices.pop()
 
-        self.move_back(order_b, order + 1)
+        self.move_back(dst_order, src_order + 1)
 
         rot_a[:] = rot_a.roll(len(rot_a) - 1 - rot_a.index(common_index))
         rot_b[:] = rot_b.roll(-rot_b.index(common_index))
         rot_a += rot_b[1:]
 
-        del self[order + 1]
+        del self[src_order + 1]
 
-        del self._ids[order + 1]
+        del self._ids[src_order + 1]
 
-    def move_back(self, src_order, dst_order, *, use_ids=False):
-        self.move(src_order, dst_order, is_front=False, use_ids=use_ids)
+    def move_back(self, src_order=0, dst_order=None, *, use_ids=False):
+        self.move(src_order, dst_order, is_back=True, use_ids=use_ids)
 
-    def move(self, src_order, dst_order, *, is_front=True, use_ids=False):
+    def move(self, src_order=0, dst_order=None, *, is_back=False, use_ids=False):
         if use_ids:
             src_order = self._order_from_id(src_order)
             dst_order = self._order_from_id(dst_order)
+
+        if dst_order is None:
+            dst_order = src_order + 1
 
         n_steps = abs(dst_order - src_order)
         if n_steps == 0:
@@ -291,12 +294,12 @@ class RotComp(list):
 
         order_shift = (dst_order - src_order) // n_steps
         for current_order in range(src_order, dst_order, order_shift):
-            if is_front:
-                self._swap(current_order, current_order + order_shift)
-            else:
-                self._swap(current_order + order_shift, current_order)
+            self._swap(current_order, current_order + order_shift, is_back=is_back)
 
-    def _swap(self, src_order, dst_order):
+    def _swap(self, src_order, dst_order, *, is_back=False):
+        if is_back:
+            src_order, dst_order = dst_order, src_order
+
         dir_ = dst_order - src_order
 
         if abs(dir_) > 1:
@@ -345,9 +348,13 @@ class RotComp(list):
         return self.__repr__(with_ids=True)
 
     def _order_from_id(self, id_):
+        if id_ is None:
+            return None
         return self._ids.index(id_)
 
     def _id_from_order(self, order):
+        if order is None:
+            return None
         return self._ids[order]
 
     def __repr__(self, *, with_ids=False):
