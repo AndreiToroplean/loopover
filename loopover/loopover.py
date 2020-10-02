@@ -210,7 +210,7 @@ class RotComp(list):
         if use_ids:
             order = self._order_from_id(order)
 
-        new_rot_comp = RotComp()
+        new_rot_comp = type(self)()
         new_ids = []
         min_available_id = self._min_available_id
 
@@ -464,7 +464,7 @@ class RotComp(list):
 
     def print_with_orders(self, *, use_ids=False):
         str_rot_comp = repr(self)
-        str_before_list = f"{self.__class__.__name__}(["
+        str_before_list = f"{type(self).__name__}(["
         len_before_list = len(str_before_list)
         str_orders = " " * (len_before_list + 1)
         str_list = str_rot_comp[len_before_list:]
@@ -500,26 +500,26 @@ class RotComp(list):
 
     def __repr__(self, *, with_ids=False):
         str_ids = f", ids={self._ids}" if with_ids else ""
-        return f"{self.__class__.__name__}([{', '.join(repr(list(index_)) for index_ in self)}]{str_ids})"
+        return f"{type(self).__name__}([{', '.join(repr(list(index_)) for index_ in self)}]{str_ids})"
 
     def __getitem__(self, key):
         super_rtn = super().__getitem__(key)
         if isinstance(key, slice):
-            new_rot = RotComp(super_rtn)
+            new_rot = type(self)(super_rtn)
             new_rot._ids = self._ids[key]
             return new_rot
 
         return super_rtn
 
     def __neg__(self):
-        rot_comp = self.__class__()
+        rot_comp = type(self)()
         for rot in reversed(self):
             rot_comp.append(-rot)
 
         return rot_comp
 
     def __eq__(self, other):
-        return super(self.__class__, self.compressed()).__eq__(other.compressed())
+        return super(type(self), self.compressed()).__eq__(other.compressed())
 
 
 class Rot(list):
@@ -576,12 +576,12 @@ class Rot(list):
             if len(indices) == 1:
                 break
 
-            subdivs.append(Rot(indices))
+            subdivs.append(type(self)(indices))
 
         return subdivs
 
     def __neg__(self):
-        return Rot(list(reversed(self)))
+        return type(self)(list(reversed(self)))
 
     def __eq__(self, other):
         if len(self) != len(other):
@@ -594,12 +594,12 @@ class Rot(list):
         return False
 
     def __repr__(self):
-        return f"{self.__class__.__name__}([{', '.join(repr(index_) for index_ in self)}])"
+        return f"{type(self).__name__}([{', '.join(repr(index_) for index_ in self)}])"
 
     def __getitem__(self, key):
         super_rtn = super().__getitem__(key)
         if isinstance(key, slice):
-            return Rot(super_rtn)
+            return type(self)(super_rtn)
 
         return super_rtn
 
