@@ -1,24 +1,145 @@
 import random
+from abc import ABC, abstractmethod
 from itertools import count
+from math import prod
 
 import numpy as np
 
 
-class LoopoverPuzzle:
-    def __init__(self, mixed_up_board, solved_board):
-        self._board = np.array(mixed_up_board)
-        self._solved_board = np.array(solved_board)
-        self._is_solved_board = np.zeros_like(self._board, dtype=bool)
-        self._applied_moves = []
+class Puzzle(ABC):
+    _board = None
 
-    def solve(self):
+    @classmethod
+    @abstractmethod
+    def from_shape(cls, *shape, is_randomized=False):
         pass
 
     def draw(self):
         print(self)
 
+    @abstractmethod
+    def is_perm_of(self, other):
+        pass
+
+    @abstractmethod
+    def randomize_perm(self):
+        pass
+
+    @property
+    @abstractmethod
+    def linearized(self):
+        pass
+
+    @abstractmethod
+    def rot(self, rot_comp):
+        pass
+
+    @abstractmethod
+    def index(self, cell):
+        pass
+
+    @abstractmethod
+    def __str__(self):
+        pass
+
+    @abstractmethod
+    def __repr__(self):
+        pass
+
+    def __eq__(self, other):
+        return self.board == other.board
+
+    def __getitem__(self, key):
+        return self.board[key]
+
+    def __setitem__(self, key, value):
+        self.board[key] = value
+
+    def __iter__(self):
+        return iter(self.board)
+
+
+class LinearPuzzle(Puzzle):
+    def __init__(self, board):
+        self.board = [str(cell) for cell in board]
+
+    @classmethod
+    def from_shape(cls, *shape, is_randomized=False):
+        puzzle = cls(range(shape[0]))
+        if is_randomized:
+            puzzle.randomize_perm()
+        return puzzle
+
+    @classmethod
+    def from_rot_comp(cls, rot_comp):
+        return cls(rot_comp.sorted_indices)
+
+    @property
+    def linearized(self):
+        return self
+
+    def randomize_perm(self):
+        random.shuffle(self.board)
+
+    def is_perm_of(self, other):
+        if len(self.board) != len(other.board):
+            return False
+
+        return sorted(self) == sorted(other)
+
+    def rot(self, rot_comp):
+        for rot in rot_comp:
+            transformed_board = list(self.board)
+            for src_index, dst_index in zip(rot, rot.roll(-1)):
+                transformed_board[self.board.index(dst_index)] = self[self.board.index(src_index)]
+            self.board = transformed_board
+
+    def index(self, cell):
+        return self.board.index(cell)
+
+    def __str__(self):
+        return " ".join(self)
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self.board})"
+
+
+class LoopoverPuzzle(Puzzle):
+    def __init__(self, board):
+        self.board = np.array(board, dtype=str)
+        self._applied_moves = []
+
+    @classmethod
+    def from_shape(cls, *shape, is_randomized=False):
+        if len(shape) != 2:
+            raise LoopoverPuzzleDimError
+
+        board = np.arange(prod(shape)).reshape(shape)
+        loopover_puzzle = cls(board)
+
+        if is_randomized:
+            loopover_puzzle.randomize_perm()
+
+        return loopover_puzzle
+
     def draw_cell(self, index):
         print(f"({', '.join(str(i) for i in index)}): {self[index]}")
+
+    @property
+    def linearized(self):
+        return LinearPuzzle(self.board.flatten())
+
+    def randomize_perm(self):
+        shape = self.board.shape
+        new_board = self.board.flatten()
+        np.random.shuffle(new_board)
+        self.board = new_board.reshape(shape)
+
+    def rot(self, rot_comp):
+        pass
+
+    def index(self, cell):
+        return np.where(self.board == cell)
 
     @property
     def move_strs(self):
@@ -33,11 +154,11 @@ class LoopoverPuzzle:
         for move_str in move_strs:
             self._app_move_str(move_str)
 
-    def _seems_solvable(self):
-        if self._board.shape != self._solved_board.shape:
+    def is_perm_of(self, other):
+        if self.board.shape != other.board.shape:
             return False
 
-        return np.array_equal(np.sort(self._board, axis=None), np.sort(self._solved_board, axis=None))
+        return np.array_equal(np.sort(self.board, axis=None), np.sort(other.board, axis=None))
 
     def _app_move_str(self, move_str):
         move = Move.from_str(move_str)
@@ -45,25 +166,22 @@ class LoopoverPuzzle:
 
     def _app_move(self, move):
         if move.axis == 0:
-            self._board[move.index_, :] = np.roll(self._board[move.index_, :], move.shift)
+            self.board[move.index_, :] = np.roll(self.board[move.index_, :], move.shift)
         else:
-            self._board[:, move.index_] = np.roll(self._board[:, move.index_], move.shift)
+            self.board[:, move.index_] = np.roll(self.board[:, move.index_], move.shift)
 
         self._applied_moves.append(move)
 
+    def __str__(self):
+        return "\n".join((" ".join(row)) for row in self.board)
+
     def __repr__(self):
-        return "\n".join((" ".join(row)) for row in self._board)
-
-    def __getitem__(self, key):
-        return self._board[key]
-
-    def __setitem__(self, key, value):
-        self._board[key] = value
+        return f"{type(self).__name__}({self.board.tolist()})"
 
     # def _solve_cell(self, dst_index):
     #     symb_to_place = self._solved_board[dst_index]
     #     dst_col_index, dst_row_index = dst_index
-    #     current_col_index, current_row_index = np.where(self._board == symb_to_place)
+    #     current_col_index, current_row_index = np.where(self.board == symb_to_place)
     #     row_shift = dst_col_index - current_col_index
     #     col_shift = dst_row_index - current_row_index
     #     while (current_col_index, current_row_index) != (dst_col_index, dst_row_index):
@@ -81,50 +199,6 @@ class LoopoverPuzzle:
     #
     # def _is_col_movable(self, col_index):
     #     return not np.any(self._is_solved_board[:, col_index])
-
-
-class LinearPuzzle:
-    def __init__(self, board):
-        self._board = [int(cell) for cell in board]
-
-    @classmethod
-    def from_range(cls, len_=10):
-        return cls(range(len_))
-
-    @classmethod
-    def from_rot_comp(cls, rot_comp):
-        return cls(rot_comp.sorted_indices)
-
-    def rot(self, rot_comp):
-        for rot in rot_comp:
-            transformed_board = list(self._board)
-            for src_index, dst_index in zip(rot, rot.roll(-1)):
-                transformed_board[self._board.index(dst_index)] = self[self._board.index(src_index)]
-            self._board = transformed_board
-
-    def index(self, cell):
-        return self._board.index(cell)
-
-    def pop(self, index_):
-        return self._board.pop(index_)
-
-    def draw(self):
-        print(self)
-
-    def __repr__(self):
-        return " ".join(str(cell) for cell in self._board)
-
-    def __getitem__(self, key):
-        return self._board[key]
-
-    def __setitem__(self, key, value):
-        self._board[key] = value
-
-    def __iter__(self):
-        return iter(self._board)
-
-    def __eq__(self, other):
-        return self._board == other._board
 
 
 class RotComp(list):
@@ -148,8 +222,8 @@ class RotComp(list):
                 self.reset_ids()
 
     @classmethod
-    def from_src_dst_perms(cls, src_perm, dst_perm):
-        if sorted(src_perm) != sorted(dst_perm):
+    def from_src_dst_perms(cls, src_perm: Puzzle, dst_perm: Puzzle):
+        if not src_perm.is_perm_of(dst_perm):
             raise RotCompPermError
 
         rot_comp = cls()
@@ -167,8 +241,6 @@ class RotComp(list):
 
             if len(rot_comp[-1]) < 2:
                 del rot_comp[-1]
-
-        rot_comp.reset_ids()
 
         return rot_comp
 
@@ -198,7 +270,7 @@ class RotComp(list):
         random.shuffle(src_orders)
         random.shuffle(dst_orders)
         for src_order, dst_order in zip(src_orders, dst_orders):
-            self.move(src_order, dst_order)
+            self.move(src_order, dst_order, use_ids=True)
 
     def to_bis(self, order=None, *, use_ids=False):
         self._subdivide(2, order, use_ids=use_ids)
@@ -679,6 +751,15 @@ class Move(tuple):
         }
 
 
+class LoopoverPuzzleError(Exception):
+    pass
+
+
+class LoopoverPuzzleDimError(LoopoverPuzzleError):
+    def __init__(self, message="This puzzle must be 2D."):
+        super().__init__(message)
+
+
 class RotCompError(Exception):
     pass
 
@@ -708,6 +789,7 @@ class RotCompFuseError(RotCompError):
 class RotError(Exception):
     def __init__(self, message="Invalid Rot."):
         super().__init__(message)
+
 
 class MoveError(Exception):
     def __init__(self, message="Incorrect move_str."):
