@@ -23,11 +23,11 @@ class Puzzle(ABC):
 
     @classmethod
     @abstractmethod
-    def from_shape(cls, shape, is_randomized=False):
+    def from_shape(cls, shape, do_randomize=False):
         board = cls._indices_array(shape=shape)
         loopover_puzzle = cls(board)
 
-        if is_randomized:
+        if do_randomize:
             loopover_puzzle.randomize_perm()
 
         return loopover_puzzle
@@ -102,10 +102,10 @@ class LinearPuzzle(Puzzle):
         super().__init__(board)
 
     @classmethod
-    def from_shape(cls, shape, is_randomized=False):
+    def from_shape(cls, shape, do_randomize=False):
         if len(shape) != 1:
             raise PuzzleDimError
-        return super().from_shape(shape, is_randomized=is_randomized)
+        return super().from_shape(shape, do_randomize=do_randomize)
 
     @classmethod
     def from_rot_comp(cls, rot_comp):
@@ -147,10 +147,10 @@ class LoopoverPuzzle(Puzzle):
         self._applied_moves = []
 
     @classmethod
-    def from_shape(cls, shape, is_randomized=False):
+    def from_shape(cls, shape, do_randomize=False):
         if len(shape) != 2:
             raise PuzzleDimError
-        return super().from_shape(shape, is_randomized=is_randomized)
+        return super().from_shape(shape, do_randomize=do_randomize)
 
     def draw_cell(self, index):
         print(f"({', '.join(str(i) for i in index)}): {self[index]}")
@@ -160,7 +160,7 @@ class LoopoverPuzzle(Puzzle):
             rot_comp = RotComp.from_src_dst_perms(self, solved_perm)
             rot_comp.to_tris()
 
-            if rot_comp.n_bis % 2 == 1:
+            if rot_comp.count_by_len(2) % 2 == 1:
                 for axis, dim in enumerate(self.shape):
                     if dim % 2 == 0:
                         self._app_move(Move(axis, 0, 1))
@@ -219,15 +219,20 @@ class LoopoverPuzzle(Puzzle):
 
 class RotComp(list):
     def __init__(self, rots=None, *, ids=None):
-        try:
-            if rots is None:
-                super().__init__([])
-            elif not isinstance(rots[0], list):
-                super().__init__([Rot(rots)])
-            else:
-                super().__init__([Rot(rot) for rot in rots])
-        except IndexError:
-            raise RotCompError
+        if not rots:
+            super().__init__([])
+        else:
+            try:
+                first_rot = rots[0]
+            except TypeError:
+                raise RotCompError
+
+            try:
+                iter(first_rot)
+            except TypeError:
+                rots = [rots]
+
+            super().__init__([Rot(rot) for rot in rots])
 
         if ids is not None:
             if len(set(ids)) < len(ids):
@@ -271,9 +276,8 @@ class RotComp(list):
             n_rots = random.randint(n_rots, max_n_rots)
         return cls([Rot.from_random(max_index, max_len) for _ in range(n_rots)])
 
-    @property
-    def n_bis(self):
-        return sum(1 if len(rot) == 2 else 0 for rot in self)
+    def count_by_len(self, len_):
+        return sum(1 if len(rot) == len_ else 0 for rot in self)
 
     @property
     def sorted_indices(self):
@@ -323,6 +327,9 @@ class RotComp(list):
         self._ids = new_ids
 
         self._sort_rots_by_len()
+
+        for len_to_fuse in reversed(range(2, len_)):
+            pass
 
     def _sort_rots_by_len(self):
         ids_and_lens = [(id_, len(rot)) for id_, rot in zip(self._ids, self)]
