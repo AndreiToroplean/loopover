@@ -109,7 +109,7 @@ class LinearPuzzle(Puzzle):
 
     @classmethod
     def from_rot_comp(cls, rot_comp):
-        return cls(rot_comp.sorted_indices)
+        return cls.from_shape(((rot_comp.max_index + 1), ))
 
     def find_solution(self, solved_perm):
         rot_comp = RotComp.from_src_dst_perms(self, solved_perm)
@@ -156,18 +156,20 @@ class LoopoverPuzzle(Puzzle):
         print(f"({', '.join(str(i) for i in index)}): {self[index]}")
 
     def find_solution(self, solved_perm):
+        # TODO: WIP
         while True:
             rot_comp = RotComp.from_src_dst_perms(self, solved_perm)
-            rot_comp.to_tris()
-
-            if rot_comp.count_by_len(2) % 2 == 1:
+            try:
+                rot_comp.to_tris(be_strict=True)
+            except RotCompSubdivideError:
                 for axis, dim in enumerate(self.shape):
                     if dim % 2 == 0:
-                        self._app_move(Move(axis, 0, 1))
+                        # TODO: this modifies the puzzle in place, it shouldn't, here. To fix.
+                        self.move(Move.from_random(self.shape))
                         break
 
                 else:
-                    return None
+                    return None  # FIXME: abandons too fast. This implementation is really temporary.
 
             else:
                 break
@@ -185,7 +187,7 @@ class LoopoverPuzzle(Puzzle):
         """Return the list of move_strs needed to solve the puzzle. """
         move_strs = []
         for move in self._applied_moves:
-            for move_str in move.to_strs():
+            for move_str in move.as_strs:
                 move_strs.append(move_str)
         return move_strs
 
@@ -195,9 +197,11 @@ class LoopoverPuzzle(Puzzle):
 
     def _app_move_str(self, move_str):
         move = Move.from_str(move_str)
-        self._app_move(move)
+        self.move(move)
 
-    def _app_move(self, move):
+    def move(self, move):
+        move = Move(*move)
+
         if move.axis == 0:
             self.board[move.index_, :] = np.roll(self.board[move.index_, :], move.shift)
         else:
@@ -213,12 +217,15 @@ class LoopoverPuzzle(Puzzle):
             str_ = "\n".join((" ".join(f"{cell:>3}" for cell in row)) for row in self.board)
         return str_
 
+    def index_2d(self, cell):
+        return np.where(self.board == cell)
+
     def __repr__(self):
         return f"{type(self).__name__}({self.board.tolist()})"
 
 
 class RotComp(list):
-    def __init__(self, rots=None, *, ids=None):
+    def __init__(self, rots=None, *, ids=None, max_index=0):
         if not rots:
             super().__init__([])
         else:
@@ -234,18 +241,23 @@ class RotComp(list):
 
             super().__init__([Rot(rot) for rot in rots])
 
-        if ids is not None:
+        if ids is None:
+            if isinstance(rots, RotComp):
+                self._ids = rots._ids
+            else:
+                self.reset_ids()
+        else:
             if len(set(ids)) < len(ids):
                 raise RotCompIdsError
 
             self._ids = ids[:len(self)]
             min_available_id = self._min_available_id
             self._ids += list(range(min_available_id, min_available_id + len(self) - len(self._ids)))
+
+        if isinstance(rots, RotComp):
+            self._max_index = rots.max_index
         else:
-            if isinstance(rots, RotComp):
-                self._ids = rots._ids
-            else:
-                self.reset_ids()
+            self._max_index = max_index
 
     @classmethod
     def from_src_dst_perms(cls, src_perm: Puzzle, dst_perm: Puzzle):
@@ -287,6 +299,14 @@ class RotComp(list):
         return sorted(indices)
 
     @property
+    def max_index(self):
+        max_index = 0
+        for rot in self:
+            max_index = max(*rot, max_index)
+        self._max_index = max(self._max_index, max_index)
+        return self._max_index
+
+    @property
     def _min_available_id(self):
         if not self._ids:
             return 0
@@ -298,13 +318,13 @@ class RotComp(list):
         random.shuffle(dst_ordering)
         self._change_ordering(dst_ordering)
 
-    def to_bis(self, order=None, *, use_ids=False):
-        self._subdivide(2, order, use_ids=use_ids)
+    def to_bis(self, order=None, *, use_ids=False, be_strict=False):
+        self._subdivide(2, order, use_ids=use_ids, be_strict=be_strict)
 
-    def to_tris(self, order=None, *, use_ids=False):
-        self._subdivide(3, order, use_ids=use_ids)
+    def to_tris(self, order=None, *, use_ids=False, be_strict=False):
+        self._subdivide(3, order, use_ids=use_ids, be_strict=be_strict)
 
-    def _subdivide(self, len_, order=None, *, use_ids=False):
+    def _subdivide(self, len_, order=None, *, use_ids=False, be_strict=False):
         if use_ids:
             order = self._order_from_id(order)
 
@@ -326,14 +346,26 @@ class RotComp(list):
 
         self._ids = new_ids
 
-        self._sort_rots_by_len()
+        self._sort_rots_by_len(reverse=True)
 
-        for len_to_fuse in reversed(range(2, len_)):
-            pass
+        self._grow_rots_to(len_, be_strict=be_strict)
 
-    def _sort_rots_by_len(self):
+    def _grow_rots_to(self, len_, *, be_strict=False):
+        n_rots = len(self)
+        n_rots_visited = 0
+        for len_to_grow in range(2, len_):
+            n_rots_len = self.count_by_len(len_to_grow)
+            if be_strict and n_rots_len % 2 != 0:
+                raise RotCompSubdivideError
+            n_rots_grown = 0
+            while n_rots_len - n_rots_grown >= 2:
+                self.grow(n_rots - n_rots_len - n_rots_visited + n_rots_grown, len_ - len_to_grow)
+                n_rots_grown += 2
+            n_rots_visited += n_rots_len
+
+    def _sort_rots_by_len(self, *, reverse=False):
         ids_and_lens = [(id_, len(rot)) for id_, rot in zip(self._ids, self)]
-        ids_and_lens.sort(key=lambda id_and_len: id_and_len[1])
+        ids_and_lens.sort(key=lambda id_and_len: id_and_len[1], reverse=reverse)
         self._change_ordering([id_ for id_, _ in ids_and_lens])
 
     def _change_ordering(self, dst_ordering):
@@ -467,6 +499,68 @@ class RotComp(list):
     def reset_ids(self):
         self._ids = list(range(len(self)))
 
+    def grow(self, dst_order=0, amount=1, *, use_ids=False):
+        if amount == 0:
+            return
+        elif amount < 0:
+            raise RotCompGrowError
+
+        if use_ids:
+            dst_order = self._order_from_id(dst_order)
+
+        src_order = dst_order + 1
+
+        src_rot: Rot
+        dst_rot: Rot
+        try:
+            src_rot, dst_rot = self[src_order], self[dst_order]
+        except IndexError:
+            raise RotCompGrowError
+
+        common_indices = self._common_indices(dst_order, src_order)
+
+        for src_index in src_rot:
+            if src_index in common_indices:
+                continue
+
+            break
+        else:
+            raise RotCompGrowError
+
+        for dst_index in dst_rot:
+            if dst_index in common_indices:
+                continue
+
+            break
+        else:
+            raise RotCompGrowError
+
+        dst_rot.roll_to(dst_index)
+        src_rot.roll_to(src_index, to_front=False)
+
+        unusable_indices = set(src_rot + dst_rot)
+        virtual_rot = Rot([dst_index])
+        for _ in range(1, amount):
+            for middle_index in range(self.max_index + 1):
+                if middle_index not in unusable_indices:
+                    break
+
+            else:
+                raise RotCompGrowError
+
+            virtual_rot.append(middle_index)
+            unusable_indices.add(middle_index)
+        virtual_rot.append(src_index)
+
+        self.insert(src_order, virtual_rot)
+        src_order += 1
+        self.insert(src_order, -virtual_rot)
+        src_order += 1
+
+        self.fuse(dst_order, dst_order + 1)
+        src_order -= 1
+        self.fuse(src_order, src_order - 1)
+
     def fuse(self, dst_order=0, *src_orders, use_ids=False):
         """Attempt fusing rots at src_orders, in the given order, into rot at dst_order.
 
@@ -484,6 +578,9 @@ class RotComp(list):
             src_orders = count(dst_order+1)
             do_raise = False
 
+        src_rot: Rot
+        dst_rot: Rot
+
         for n_fused, src_order in enumerate(src_orders):
             src_order -= n_fused
             if dst_order == src_order:
@@ -499,7 +596,11 @@ class RotComp(list):
 
             cancel_out = dst_rot == -src_rot
             if cancel_out:
-                self.move_back(src_order, dst_order + 1)
+                if dst_order < src_order:
+                    self.move_back(src_order, dst_order + 1)
+                else:
+                    self.move_back(src_order, dst_order - 1)
+                    dst_order, src_order = src_order, dst_order
                 del self[dst_order:dst_order + 2]
                 break
 
@@ -512,15 +613,18 @@ class RotComp(list):
 
             common_index = common_indices.pop()
 
-            self.move_back(src_order, dst_order + 1)
+            if dst_order < src_order:
+                self.move_back(src_order, dst_order + 1)
+            else:
+                self.move_back(src_order, dst_order - 1)
+                dst_order, src_order = src_order, dst_order
+                dst_rot, src_rot = src_rot, dst_rot
 
-            dst_rot[:] = dst_rot.roll(len(dst_rot) - 1 - dst_rot.index(common_index))
-            src_rot[:] = src_rot.roll(-src_rot.index(common_index))
+            dst_rot.roll_to(common_index)
+            src_rot.roll_to(common_index, to_front=False)
             dst_rot += src_rot[1:]
 
             del self[dst_order + 1]
-
-            del self._ids[dst_order + 1]
 
     def move_back(self, src_order=0, dst_order=None, *, use_ids=False):
         self.move(src_order, dst_order, is_back=True, use_ids=use_ids)
@@ -589,9 +693,6 @@ class RotComp(list):
     def print_with_ids(self):
         self.print_with_orders(use_ids=True)
 
-    def repr_with_ids(self):
-        return self.__repr__(with_ids=True)
-
     def _order_from_id(self, id_):
         if id_ is None:
             return None
@@ -602,23 +703,30 @@ class RotComp(list):
             return None
         return self._ids[order]
 
-    def append(self, element):
-        super().append(Rot(element))
+    def append(self, rot):
+        super().append(Rot(rot))
         self._ids.append(self._min_available_id)
 
-    def __delitem__(self, key):
-        super().__delitem__(key)
-        del self._ids[key]
+    def insert(self, order, rot):
+        super().insert(order, Rot(rot))
+        self._ids.insert(order, self._min_available_id)
 
-    def __repr__(self, *, with_ids=False):
-        str_ids = f", ids={self._ids}" if with_ids else ""
-        return f"{type(self).__name__}([{', '.join(repr(list(index_)) for index_ in self)}]{str_ids})"
+    def __delitem__(self, order):
+        super().__delitem__(order)
+        del self._ids[order]
 
-    def __getitem__(self, key):
-        super_rtn = super().__getitem__(key)
-        if isinstance(key, slice):
+    def __str__(self):
+        return self.__repr__(with_meta=False)
+
+    def __repr__(self, *, with_meta=True):
+        str_meta = f", ids={self._ids}, max_index={self.max_index}" if with_meta else ""
+        return f"{type(self).__name__}([{', '.join(repr(list(index_)) for index_ in self)}]{str_meta})"
+
+    def __getitem__(self, order):
+        super_rtn = super().__getitem__(order)
+        if isinstance(order, slice):
             new_rot = type(self)(super_rtn)
-            new_rot._ids = self._ids[key]
+            new_rot._ids = self._ids[order]
             return new_rot
 
         return super_rtn
@@ -674,6 +782,12 @@ class Rot(list):
             yield roll
             roll.append(roll.pop(0))
             roll = Rot(roll)
+
+    def roll_to(self, index_, *, to_front=True):
+        if to_front:
+            self[:] = self.roll(len(self) - 1 - self.index(index_))
+        else:
+            self[:] = self.roll(-self.index(index_))
 
     def roll(self, roll_amount=1):
         roll = Rot(self)
@@ -740,19 +854,27 @@ class Move(tuple):
         return cls(axis, index_, shift)
 
     @classmethod
-    def from_src_dst(cls, src_index, dst_index, board_dims):
+    def from_src_dst_indices(cls, src_index, dst_index, board_shape):
         shifts = [dst_axis_index - src_axis_index for src_axis_index, dst_axis_index in zip(src_index, dst_index)]
 
         if shifts.count(0) == 0:
             raise MoveAmbiguousError
 
-        axis = shifts.index(0) ^ 1
-        shift = cls._smallest_shift(shifts[axis], board_dims[axis])
-        index_ = dst_index[axis ^ 1]
+        axis = shifts.index(0)
+        shift = cls._smallest_shift(shifts[axis ^ 1], board_shape[axis ^ 1])
+        index_ = dst_index[axis]
 
         return cls(axis, index_, shift)
 
-    def to_strs(self):
+    @classmethod
+    def from_random(cls, board_shape):
+        axis = random.randint(0, 1)
+        index_ = random.randint(0, board_shape[axis] - 1)
+        shift = random.randint(0, board_shape[axis ^ 1] - 1)
+        return cls(axis, index_, shift)
+
+    @property
+    def as_strs(self):
         norm_shift = self.shift / abs(self.shift)
         letter = self._axis_shift_to_letter[(self.axis, norm_shift)]
         return tuple(f"{letter}{self.index_}" for _ in range(abs(self.shift)))
@@ -817,6 +939,18 @@ class RotCompIdsError(RotCompError):
 class RotCompSwapError(RotCompError):
     def __init__(self, message="Can't swap two rots that aren't immediately consecutive."):
         super().__init__(message)
+
+
+class RotCompSubdivideError(RotCompError):
+    def __init__(self, message=(
+            "Couldn't subdivide strictly to the requested len."
+            )):
+        super().__init__(message)
+
+
+class RotCompGrowError(RotCompError):
+    def __init__(self):
+        pass
 
 
 class RotCompFuseError(RotCompError):
