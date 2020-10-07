@@ -166,7 +166,7 @@ class LoopoverPuzzle(Puzzle):
             except RotCompSubdivideError:
                 for axis, dim in enumerate(working_perm.shape):
                     if dim % 2 == 0:
-                        working_perm.move(Move(axis, 0, 1))
+                        working_perm.move(Move(axis, 0, 1))  # TODO: needs to be recorded.
                         break
 
                 else:
@@ -181,7 +181,30 @@ class LoopoverPuzzle(Puzzle):
         pass
 
     def rot(self, rot_comp):
-        pass
+        # TODO: temporary implementation, for testing only.
+        rot_comp = RotComp(rot_comp)
+
+        indices_board = self._indices_array()
+        for rot in rot_comp:
+            dst_indices_places = [np.where(indices_board == dst_index) for dst_index in rot]
+            for src_index, dst_index_place in zip(rot.roll(), dst_indices_places):
+                indices_board[dst_index_place] = src_index
+
+        self[:] = self[indices_board]
+
+    def closest_index(self, indices):
+        multi_indices = self._unravel_index(indices)
+        mean_multi_index = []
+        for axis_len, axis_index in zip(self.shape, multi_indices):
+            mean_multi_index.append(round(modular_mean(axis_index, axis_len)) % axis_len)
+
+        return self._ravel_multi_index(mean_multi_index)
+
+    def _unravel_index(self, indices):
+        return np.unravel_index(indices, self.shape)
+
+    def _ravel_multi_index(self, multi_indices):
+        return np.ravel_multi_index(multi_indices,self.shape)
 
     @property
     def move_strs(self):
@@ -985,6 +1008,23 @@ class MoveLetterError(MoveError):
 class MoveIndexError(MoveError):
     def __init__(self, message="Incorrect index, must be int."):
         super().__init__(message)
+
+
+def modular_mean(values, mod):
+    """Return the modular mean, or 0 if it is centered. """
+    if len(values) == 0:
+        raise ValueError
+
+    values = np.array(values, dtype=float)
+    angles = 2 * np.pi * values / mod
+    values_vecs = np.array([np.cos(angles), np.sin(angles)])
+    mean_vec = np.mean(values_vecs, axis=-1)
+    if all(np.isclose(mean_vec, 0)):
+        return 0
+
+    mean_angle = np.angle(mean_vec[0] + mean_vec[1] * 1j)
+    mean_value = mod * mean_angle / (2 * np.pi)
+    return mean_value
 
 
 def loopover(mixed_up_board, solved_board):
