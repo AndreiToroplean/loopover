@@ -157,19 +157,20 @@ class LoopoverPuzzle(Puzzle):
 
     def find_solution(self, solved_perm):
         # TODO: WIP
+        working_perm = type(self)(self)
+
         while True:
-            rot_comp = RotComp.from_src_dst_perms(self, solved_perm)
+            rot_comp = RotComp.from_src_dst_perms(working_perm, solved_perm)
             try:
                 rot_comp.to_tris(be_strict=True)
             except RotCompSubdivideError:
-                for axis, dim in enumerate(self.shape):
+                for axis, dim in enumerate(working_perm.shape):
                     if dim % 2 == 0:
-                        # TODO: this modifies the puzzle in place, it shouldn't, here. To fix.
-                        self.move(Move.from_random(self.shape))
+                        working_perm.move(Move(axis, 0, 1))
                         break
 
                 else:
-                    return None  # FIXME: abandons too fast. This implementation is really temporary.
+                    return None
 
             else:
                 break
@@ -199,13 +200,16 @@ class LoopoverPuzzle(Puzzle):
         move = Move.from_str(move_str)
         self.move(move)
 
-    def move(self, move):
-        move = Move(*move)
+    def move(self, move=None):
+        if move is None:
+            move = Move.from_random(self.shape)
+        else:
+            move = Move(*move)
 
         if move.axis == 0:
-            self.board[move.index_, :] = np.roll(self.board[move.index_, :], move.shift)
-        else:
             self.board[:, move.index_] = np.roll(self.board[:, move.index_], move.shift)
+        else:
+            self.board[move.index_, :] = np.roll(self.board[move.index_, :], move.shift)
 
         self._applied_moves.append(move)
 
@@ -860,17 +864,18 @@ class Move(tuple):
         if shifts.count(0) == 0:
             raise MoveAmbiguousError
 
-        axis = shifts.index(0)
-        shift = cls._smallest_shift(shifts[axis ^ 1], board_shape[axis ^ 1])
-        index_ = dst_index[axis]
+        axis = shifts.index(0) ^ 1
+        shift = cls._smallest_shift(shifts[axis], board_shape[axis])
+        index_ = dst_index[axis ^ 1]
 
         return cls(axis, index_, shift)
 
     @classmethod
     def from_random(cls, board_shape):
         axis = random.randint(0, 1)
-        index_ = random.randint(0, board_shape[axis] - 1)
-        shift = random.randint(0, board_shape[axis ^ 1] - 1)
+        index_ = random.randint(0, board_shape[axis ^ 1] - 1)
+        shift = random.randint(1, board_shape[axis] - 1)
+
         return cls(axis, index_, shift)
 
     @property
@@ -899,18 +904,12 @@ class Move(tuple):
         return f"Move(axis={self.axis}, index_={self.index_}, shift={self.shift})"
 
     _letter_to_axis_shift = {
-        "R": (0, 1),
-        "L": (0, -1),
-        "U": (1, -1),
-        "D": (1, 1),
+        "R": (1, 1),
+        "L": (1, -1),
+        "U": (0, -1),
+        "D": (0, 1),
         }
-
-    _axis_shift_to_letter = {
-        (0, 1): "R",
-        (0, -1): "L",
-        (1, -1): "U",
-        (1, 1): "D",
-        }
+    _axis_shift_to_letter = {axis_shift: letter for letter, axis_shift in _letter_to_axis_shift.items()}
 
 
 class PuzzleError(Exception):
