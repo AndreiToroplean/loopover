@@ -1,6 +1,6 @@
 import random
 from abc import ABC, abstractmethod
-from itertools import count, product
+from itertools import count
 from math import prod
 
 import numpy as np
@@ -41,7 +41,7 @@ class Puzzle(ABC):
         pass
 
     @abstractmethod
-    def rot(self, rot_comp):
+    def rotate(self, rot_comp):
         pass
 
     def _indices_array(self=None, *, shape=None) -> np.ndarray:
@@ -116,9 +116,9 @@ class LinearPuzzle(Puzzle):
         return rot_comp
 
     def apply_solution(self, solution):
-        self.rot(solution)
+        self.rotate(solution)
 
-    def rot(self, rot_comp):
+    def rotate(self, rot_comp):
         rot_comp = RotComp(rot_comp)
 
         indices_board = self._indices_array()
@@ -144,7 +144,7 @@ class LinearPuzzle(Puzzle):
 class LoopoverPuzzle(Puzzle):
     def __init__(self, board):
         super().__init__(board)
-        self._applied_moves = []
+        self.applied_moves = []
 
     @classmethod
     def from_shape(cls, shape, do_randomize=False):
@@ -175,24 +175,33 @@ class LoopoverPuzzle(Puzzle):
             else:
                 break
 
-        return rot_comp
+        working_perm.rotate(rot_comp)
+
+        return
 
     def apply_solution(self, solution):
         pass
 
-    def rot(self, rot_comp):
-        # TODO: temporary implementation, for testing only.
+    def rotate(self, rot_comp):
+        # TODO: WIP
         rot_comp = RotComp(rot_comp)
 
         indices_board = self._indices_array()
         for rot in rot_comp:
-            dst_indices_places = [np.where(indices_board == dst_index) for dst_index in rot]
-            for src_index, dst_index_place in zip(rot.roll(), dst_indices_places):
-                indices_board[dst_index_place] = src_index
+            dst_indices = [np.where(indices_board == raw_dst_index) for raw_dst_index in rot]
+            for src_index, dst_index in zip(rot.roll(), dst_indices):
+                indices_board[dst_index] = src_index
 
-        self[:] = self[indices_board]
+            self._app_rot(dst_indices)
 
-    def closest_index(self, indices):
+    def _app_rot(self, dst_indices):
+        # TODO: WIP
+        center_index = self._center_index(dst_indices)
+        paths_to_center = [self._shortest_path(index_, center_index) for index_ in dst_indices]
+        paths_to_center.sort(key=lambda path: path.distance, reverse=True)
+        self.move(paths_to_center.pop())
+
+    def _center_index(self, indices):
         multi_indices = self._unravel_index(indices)
         mean_multi_index = []
         for axis_len, axis_index in zip(self.shape, multi_indices):
@@ -200,41 +209,51 @@ class LoopoverPuzzle(Puzzle):
 
         return self._ravel_multi_index(mean_multi_index)
 
+    def _shortest_path(self, src_index, dst_index):
+        shifts = [dst_axis_index - src_axis_index for src_axis_index, dst_axis_index in zip(src_index, dst_index)]
+
+        move_comp = MoveComp()
+        for axis, axis_len in self.shape:
+            shift = self._smallest_shift(shifts[axis], axis_len)
+            index_ = dst_index[axis ^ 1]
+            move_comp.append(Move(axis, index_, shift))
+
+        return move_comp
+
+    @staticmethod
+    def _smallest_shift(shift, axis_len):
+        return (shift + (axis_len // 2)) % axis_len - axis_len // 2
+
     def _unravel_index(self, indices):
         return np.unravel_index(indices, self.shape)
 
     def _ravel_multi_index(self, multi_indices):
-        return np.ravel_multi_index(multi_indices,self.shape)
+        return np.ravel_multi_index(multi_indices, self.shape)
+
+    def move_from_strs(self, move_strs):
+        self.move(MoveComp.from_strs(move_strs))
+
+    def move(self, move_comp):
+        move_comp = MoveComp(move_comp)
+
+        for move in move_comp:
+            if move.axis == 0:
+                self.board[:, move.index_] = np.roll(self.board[:, move.index_], move.shift)
+            else:
+                self.board[move.index_, :] = np.roll(self.board[move.index_, :], move.shift)
+
+            self.applied_moves.append(move)
+
+    def random_move_comp(self, len_=1):
+        return MoveComp([self._random_move for _ in range(len_)])
 
     @property
-    def move_strs(self):
-        """Return the list of move_strs needed to solve the puzzle. """
-        move_strs = []
-        for move in self._applied_moves:
-            for move_str in move.as_strs:
-                move_strs.append(move_str)
-        return move_strs
+    def _random_move(self):
+        axis = random.randint(0, 1)
+        index_ = random.randint(0, self.shape[axis ^ 1] - 1)
+        shift = random.randint(1, self.shape[axis] - 1)
 
-    def app_move_strs(self, move_strs):
-        for move_str in move_strs:
-            self._app_move_str(move_str)
-
-    def _app_move_str(self, move_str):
-        move = Move.from_str(move_str)
-        self.move(move)
-
-    def move(self, move=None):
-        if move is None:
-            move = Move.from_random(self.shape)
-        else:
-            move = Move(*move)
-
-        if move.axis == 0:
-            self.board[:, move.index_] = np.roll(self.board[:, move.index_], move.shift)
-        else:
-            self.board[move.index_, :] = np.roll(self.board[move.index_, :], move.shift)
-
-        self._applied_moves.append(move)
+        return Move(axis, index_, shift)
 
     @property
     def _pretty_repr(self):
@@ -258,13 +277,17 @@ class RotComp(list):
         else:
             try:
                 first_rot = rots[0]
+            except IndexError:
+                pass
+
             except TypeError:
                 raise RotCompError
 
-            try:
-                iter(first_rot)
-            except TypeError:
-                rots = [rots]
+            else:
+                try:
+                    iter(first_rot)
+                except TypeError:
+                    rots = [rots]
 
             super().__init__([Rot(rot) for rot in rots])
 
@@ -409,12 +432,13 @@ class RotComp(list):
         return set.intersection(*(set(rot) for rot in self))
 
     def compress(self):
-        self[:] = self.compressed()
+        self[:] = self.compressed
 
+    @property
     def compressed(self):
         src_perm = LinearPuzzle.from_rot_comp(self)
         dst_perm = LinearPuzzle(src_perm)
-        dst_perm.rot(self)
+        dst_perm.rotate(self)
         return RotComp.from_src_dst_perms(src_perm, dst_perm)
 
     def _compress_old(self):
@@ -589,10 +613,10 @@ class RotComp(list):
         self.fuse(src_order, src_order - 1)
 
     def fuse(self, dst_order=0, *src_orders, use_ids=False):
-        """Attempt fusing rots at src_orders, in the given order, into rot at dst_order.
+        """Attempt fusing rots at src_orders, in the given order, into rotate at dst_order.
 
         If no dst_order is given, use 0.
-        If no src_order is given, repeatedly fuse the rot at dst_order+1 until no more fuse is possible.
+        If no src_order is given, repeatedly fuse the rotate at dst_order+1 until no more fuse is possible.
         If two rots cancel out, stop fusing.
         """
         if use_ids:
@@ -766,7 +790,7 @@ class RotComp(list):
         return rot_comp
 
     def __eq__(self, other):
-        return super(type(self), self.compressed()).__eq__(other.compressed())
+        return super(type(self), self.compressed).__eq__(other.compressed)
 
 
 class Rot(list):
@@ -840,6 +864,8 @@ class Rot(list):
         if len(self) != len(other):
             return False
 
+        other = type(self)(other)
+
         for other_roll in other.all_rolls:
             if super().__eq__(other_roll):
                 return True
@@ -857,39 +883,175 @@ class Rot(list):
         return super_rtn
 
 
+class MoveComp(list):
+    def __init__(self, moves=None):
+        if moves is None:
+            super().__init__([])
+            return
+
+        try:
+            first_move = moves[0]
+        except IndexError:
+            pass
+
+        except TypeError:
+            raise MoveCompError
+
+        else:
+            try:
+                iter(first_move)
+            except TypeError:
+                moves = [moves]
+
+        super().__init__([Move(*move) for move in moves])
+
+    @classmethod
+    def from_strs(cls, move_strs):
+        return cls([Move.from_str(move_str) for move_str in move_strs])
+
+    @property
+    def distance(self):
+        return sum(abs(move.shift) for move in self)
+
+    @property
+    def as_strs(self):
+        return [move_str for move in self for move_str in move.as_strs]
+
+    @property
+    def compressed(self):
+        new_move_comp = type(self)(self)
+        while True:
+            iter_n_fused = 0
+            current_axis = -1
+            iter_move_comp = type(new_move_comp)()
+            move_comps_per_axis = []
+            for move in new_move_comp:
+                if move.axis != current_axis:
+                    current_axis = move.axis
+                    move_comps_per_axis.append(type(new_move_comp)())
+
+                move_comps_per_axis[-1].append(move)
+
+            for axis_move_comp in move_comps_per_axis:
+                axis_move_comp.sort(key=lambda m: m.index_)
+                current_index = -1
+                move_comps_per_index = []
+                for axis_move in axis_move_comp:
+                    if axis_move.index_ != current_index:
+                        current_index = axis_move.index_
+                        move_comps_per_index.append(type(new_move_comp)())
+
+                    move_comps_per_index[-1].append(axis_move)
+
+                for index_move_comp in move_comps_per_index:
+                    iter_n_fused += index_move_comp.fuse()
+                    iter_move_comp += index_move_comp
+
+            if iter_n_fused == 0:
+                break
+
+            new_move_comp = iter_move_comp
+
+        return new_move_comp
+
+    def compress(self):
+        self[:] = self.compressed
+
+    def fuse(self, dst_order=None, *src_orders):
+        orders = [dst_order] + list(src_orders)
+        if src_orders and not(sorted(orders) == list(range(dst_order, src_orders[-1] + 1)) == orders):
+            raise MoveCompFuseError
+
+        do_raise = True
+        if dst_order is None:
+            dst_order = 0
+            do_raise = False
+        if not src_orders:
+            src_orders = [dst_order + 1]
+            do_raise = False
+
+        dst_move: Move
+        src_move: Move
+
+        try:
+            dst_move = self[dst_order]
+        except IndexError as e:
+            if do_raise:
+                raise e
+
+            return 0
+
+        n_fused = 0
+        for src_order in src_orders:
+            src_order -= n_fused
+            try:
+                src_move = self[src_order]
+            except IndexError as e:
+                if do_raise:
+                    raise e
+
+                break
+
+            try:
+                fused_move = dst_move + src_move
+            except TypeError as e:
+                if do_raise:
+                    raise e
+
+                break
+
+            self[dst_order] = fused_move
+            del self[src_order]
+
+            n_fused += 1
+
+        if self[dst_order] == 0:
+            del self[dst_order]
+            n_fused += 1
+
+        return n_fused
+
+    def append(self, move):
+        super().append(Move(*move))
+
+    def __repr__(self):
+        return f"{type(self).__name__}([{', '.join(repr(tuple(move)) for move in self)}])"
+
+    def __neg__(self):
+        return type(self)([-move for move in reversed(self)])
+
+    def __eq__(self, other):
+        other = type(self)(other)
+
+        super(type(self), self.compressed).__eq__(other.compressed)
+
+
 class Move(tuple):
     def __new__(cls, axis: int, index_: int, shift: int):
+        if axis != 0 and axis != 1:
+            raise MoveError("axis must be 0 or 1.")
+
         return super().__new__(cls, (axis, index_, shift))
+
+    def __init__(self,  axis: int, index_: int, shift: int):
+        super().__init__()
 
     @classmethod
     def from_str(cls, move_str):
         try:
             letter, index_ = tuple(move_str)
         except ValueError:
-            raise MoveError
+            raise MoveError("Invalid move_str.")
 
         try:
             axis, shift = cls._letter_to_axis_shift[letter]
         except KeyError:
-            raise MoveLetterError
+            raise MoveError("Invalid letter, must be 'R', 'L', 'U', or 'D'.")
 
         try:
             index_ = int(index_)
         except ValueError:
-            raise MoveIndexError
-
-        return cls(axis, index_, shift)
-
-    @classmethod
-    def from_src_dst_indices(cls, src_index, dst_index, board_shape):
-        shifts = [dst_axis_index - src_axis_index for src_axis_index, dst_axis_index in zip(src_index, dst_index)]
-
-        if shifts.count(0) == 0:
-            raise MoveAmbiguousError
-
-        axis = shifts.index(0) ^ 1
-        shift = cls._smallest_shift(shifts[axis], board_shape[axis])
-        index_ = dst_index[axis ^ 1]
+            raise MoveError("Invalid index, must be int.")
 
         return cls(axis, index_, shift)
 
@@ -903,6 +1065,9 @@ class Move(tuple):
 
     @property
     def as_strs(self):
+        if self.shift == 0:
+            return ()
+
         norm_shift = self.shift / abs(self.shift)
         letter = self._axis_shift_to_letter[(self.axis, norm_shift)]
         return tuple(f"{letter}{self.index_}" for _ in range(abs(self.shift)))
@@ -919,12 +1084,31 @@ class Move(tuple):
     def shift(self):
         return self[2]
 
-    @staticmethod
-    def _smallest_shift(shift, dim):
-        return (shift + (dim//2)) % dim - dim//2
-
     def __repr__(self):
         return f"Move(axis={self.axis}, index_={self.index_}, shift={self.shift})"
+
+    def __neg__(self):
+        return type(self)(self.axis, self.index_, -self.shift)
+
+    def __add__(self, other):
+        other = type(self)(*other)
+
+        if self.axis != other.axis or self.index_ != other.index_:
+            raise TypeError("Two moves can only be added together if they share both axes and indices.")
+
+        return type(self)(self.axis, self.index_, self.shift + other.shift)
+
+    def __iadd__(self, other):
+        return other + self
+
+    def __eq__(self, other):
+        if other == 0:
+            if self.shift == 0:
+                return True
+
+            return False
+
+        super().__eq__(other)
 
     _letter_to_axis_shift = {
         "R": (1, 1),
@@ -987,27 +1171,17 @@ class RotError(Exception):
         super().__init__(message)
 
 
+class MoveCompError(Exception):
+    pass
+
+
+class MoveCompFuseError(MoveCompError):
+    def __init__(self, message="The orders given must be contiguous and in order."):
+        super().__init__(message)
+
+
 class MoveError(Exception):
-    def __init__(self, message="Incorrect move_str."):
-        super().__init__(message)
-
-
-class MoveAmbiguousError(MoveError):
-    def __init__(self, message=(
-            "There are several distinct ways to achieve this move. \n"
-            "Please let the scr_index and dst_index be equal at least along one axis. "
-            )):
-        super().__init__(message)
-
-
-class MoveLetterError(MoveError):
-    def __init__(self, message="Incorrect letter, must be 'R', 'L', 'U', or 'D'."):
-        super().__init__(message)
-
-
-class MoveIndexError(MoveError):
-    def __init__(self, message="Incorrect index, must be int."):
-        super().__init__(message)
+    pass
 
 
 def modular_mean(values, mod):
@@ -1030,7 +1204,7 @@ def modular_mean(values, mod):
 def loopover(mixed_up_board, solved_board):
     puzzle = LoopoverPuzzle(mixed_up_board, solved_board)
     puzzle.find_solution()
-    return puzzle.move_strs
+    return puzzle.applied_moves_as_strs
 
 
 if __name__ == "__main__":
