@@ -88,9 +88,6 @@ class Puzzle(ABC):
 
         self._ids.ravel()[src_ordering] = dst_ordering
 
-    def _get_multi_index_where_id_is(self, id_):
-        return np.where(self._ids == id_)
-
     def _get_indices_array(self=None, *, shape=None) -> np.ndarray:
         if shape is None:
             shape = self.shape
@@ -134,8 +131,8 @@ class Puzzle(ABC):
     def _ravel_multi_index(self, multi_indices):
         return np.ravel_multi_index(multi_indices, self.shape)
 
-    def _index_from_id(self, id_):
-        return int(np.where(self._ids.flat == id_)[0])
+    def _get_multi_index_from_id(self, id_):
+        return np.where(self._ids.flat == id_)
 
 
 class LinearPuzzle(Puzzle):
@@ -175,9 +172,9 @@ class LinearPuzzle(Puzzle):
         ted_board = self.board.copy
         for rot in rotcomp:
             for src_id, dst_id in zip(rot.roll(), rot):
-                dst_multi_index = self._get_multi_index_where_id_is(dst_id)
+                dst_multi_index = self._get_multi_index_from_id(dst_id)
                 ted_ids[dst_multi_index] = src_id
-                ted_board[dst_multi_index] = self.board[self._get_multi_index_where_id_is(src_id)]
+                ted_board[dst_multi_index] = self.board[self._get_multi_index_from_id(src_id)]
 
         self._ids = ted_ids
         self.board = ted_board
@@ -245,16 +242,16 @@ class LoopoverPuzzle(Puzzle):
         ted_ids = self._ids.copy()
         for rot in rotcomp:
             for src_id, dst_id in zip(rot.roll(), rot):
-                dst_multi_index = self._get_center_multi_index(dst_id)
+                dst_multi_index = self._get_multi_index_from_id(dst_id)
                 ted_ids[dst_multi_index] = src_id
 
             self._apply_rot(rot)
 
     def _apply_rot(self, dst_multi_indices):
         # TODO: WIP
-        center_index = self._get_center_multi_index(dst_multi_indices)
-        print("center", self._ravel_multi_index(center_index))  # for debug
-        paths_to_center = [tuple(self._get_shortest_path(index_, center_index, first_axis) for first_axis in range(2))
+        mean_multi_index = self._get_mean_multi_index(dst_multi_indices)
+        print("center", self._ravel_multi_index(mean_multi_index))  # for debug
+        paths_to_center = [tuple(self._get_shortest_path(index_, mean_multi_index, first_axis) for first_axis in range(2))
             for index_ in zip(*dst_multi_indices)]
         paths_to_center.sort(key=lambda paths: paths[0].distance, reverse=True)
         path_closest_to_center = paths_to_center.pop()[0]
@@ -269,7 +266,7 @@ class LoopoverPuzzle(Puzzle):
             self.move(second_path)
         self.draw()  # for debug
 
-    def _get_center_multi_index(self, multi_indices):
+    def _get_mean_multi_index(self, multi_indices):
         mean_multi_index = []
         for axis_len, axis_index in zip(self.shape, multi_indices):
             mean_multi_index.append(round(modular_mean(axis_index, axis_len)) % axis_len)
