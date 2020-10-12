@@ -75,6 +75,9 @@ class Puzzle(ABC):
     def n_pieces(self):
         return prod(self.shape)
 
+    def copy(self):
+        return type(self)(self)
+
     def reattribute_ids_based_on(self, solved_board):
         solved_puzzle = type(self)(solved_board)
         if not self.is_perm_of(solved_puzzle):
@@ -167,8 +170,9 @@ class LinearPuzzle(Puzzle):
 
     def rot(self, rotcomp):
         rotcomp = RotComp(rotcomp)
-        ted_ids = self._ids.copy()
-        ted_board = self.board.copy()
+
+        ted_ids = self._ids.copy
+        ted_board = self.board.copy
         for rot in rotcomp:
             for src_id, dst_id in zip(rot.roll(), rot):
                 dst_multi_index = self._get_multi_index_where_id_is(dst_id)
@@ -207,7 +211,7 @@ class LoopoverPuzzle(Puzzle):
 
     def get_solution(self):
         # TODO: WIP
-        working_perm = type(self)(self)
+        working_perm = self.copy()
 
         while True:
             rotcomp = working_perm.get_rotcomp_solution()
@@ -227,22 +231,24 @@ class LoopoverPuzzle(Puzzle):
 
         working_perm.rot(rotcomp)
 
-        return
+        solution = self.applied_moves
+
+        return solution
 
     def apply_solution(self, solution):
-        pass
+        self.move(solution)
 
     def rot(self, rotcomp):
         # TODO: WIP
         rotcomp = RotComp(rotcomp)
 
-        indices_board = self._get_indices_array()
+        ted_ids = self._ids.copy()
         for rot in rotcomp:
-            dst_indices = [np.where(indices_board == raw_dst_index) for raw_dst_index in rot]
-            for src_index, dst_index in zip(rot.roll(), dst_indices):
-                indices_board[dst_index] = src_index
+            for src_id, dst_id in zip(rot.roll(), rot):
+                dst_multi_index = self._get_center_multi_index(dst_id)
+                ted_ids[dst_multi_index] = src_id
 
-            self._apply_rot(self._unravel_index(dst_indices))
+            self._apply_rot(rot)
 
     def _apply_rot(self, dst_multi_indices):
         # TODO: WIP
