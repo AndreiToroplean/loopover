@@ -78,7 +78,7 @@ class Puzzle(ABC):
     def copy(self):
         return type(self)(self)
 
-    def reattribute_ids_based_on(self, solved_board):
+    def recompute_ids(self, solved_board):
         solved_puzzle = type(self)(solved_board)
         if not self.is_perm_of(solved_puzzle):
             raise PuzzlePermError
@@ -132,7 +132,7 @@ class Puzzle(ABC):
         return np.ravel_multi_index(multi_indices, self.shape)
 
     def _get_multi_index_from_id(self, id_):
-        return np.where(self._ids.flat == id_)
+        return tuple(int(axis_index) for axis_index in np.where(self._ids == id_))
 
 
 class LinearPuzzle(Puzzle):
@@ -217,7 +217,7 @@ class LoopoverPuzzle(Puzzle):
             except RotCompSubdivideError:
                 for axis, dim in enumerate(working_perm.shape):
                     if dim % 2 == 0:
-                        working_perm.move(Move(axis, 0, 1))  # TODO: needs to be recorded.
+                        working_perm.move(Move(axis, 0, 1))
                         break
 
                 else:
@@ -247,16 +247,16 @@ class LoopoverPuzzle(Puzzle):
 
             self._apply_rot(rot)
 
-    def _apply_rot(self, dst_multi_indices):
+    def _apply_rot(self, rot):
         # TODO: WIP
-        mean_multi_index = self._get_mean_multi_index(dst_multi_indices)
-        print("center", self._ravel_multi_index(mean_multi_index))  # for debug
-        paths_to_center = [tuple(self._get_shortest_path(index_, mean_multi_index, first_axis) for first_axis in range(2))
-            for index_ in zip(*dst_multi_indices)]
+        center_id = self._get_center_id(rot)
+        print("center_id", center_id)  # for debug
+        paths_to_center = [tuple(self._get_shortest_path(id_, center_id, first_axis) for first_axis in range(2))
+            for id_ in rot]
         paths_to_center.sort(key=lambda paths: paths[0].distance, reverse=True)
         path_closest_to_center = paths_to_center.pop()[0]
         self.move(path_closest_to_center)
-        self.draw()  # for debug
+        self.draw_ids()  # for debug
         first_path = MoveComp([paths_to_center[0][0][0], paths_to_center[1][1][0]])
         second_path = MoveComp([paths_to_center[0][1][0], paths_to_center[1][0][0]])
         print(first_path, second_path, sep="\n")  # for debug
@@ -264,17 +264,21 @@ class LoopoverPuzzle(Puzzle):
             self.move(first_path)
         else:
             self.move(second_path)
-        self.draw()  # for debug
+        self.draw_ids()  # for debug
 
-    def _get_mean_multi_index(self, multi_indices):
+    def _get_center_id(self, rot):
+        multi_indices = zip(*(self._get_multi_index_from_id(id_) for id_ in rot))
+
         mean_multi_index = []
-        for axis_len, axis_index in zip(self.shape, multi_indices):
-            mean_multi_index.append(round(modular_mean(axis_index, axis_len)) % axis_len)
+        for axis_len, axis_indices in zip(self.shape, multi_indices):
+            mean_multi_index.append(round(modular_mean(axis_indices, axis_len)) % axis_len)
 
-        return mean_multi_index
+        return self._ids[tuple(mean_multi_index)]
 
-    def _get_shortest_path(self, src_multi_index, dst_multi_index, first_axis=0):
-        shifts = [dst_axis_index - src_axis_index
+    def _get_shortest_path(self, src_id, dst_id, first_axis=0):
+        src_multi_index = self._get_multi_index_from_id(src_id)
+        dst_multi_index = self._get_multi_index_from_id(dst_id)
+        shifts = [int(dst_axis_index - src_axis_index)
             for src_axis_index, dst_axis_index in zip(src_multi_index, dst_multi_index)]
 
         if first_axis == 0:
@@ -293,8 +297,15 @@ class LoopoverPuzzle(Puzzle):
         return movecomp
 
     @staticmethod
-    def _get_smallest_shift(shift, axis_len):
-        return (shift + (axis_len // 2)) % axis_len - axis_len // 2
+    def _get_smallest_shift(axis_shift, axis_len):
+        return (axis_shift + (axis_len // 2)) % axis_len - axis_len // 2
+
+    def _get_shifted_id(self, id_, multi_shift):
+        multi_index = self._get_multi_index_from_id(id_)
+        shifted_multi_index = tuple((axis_index + axis_shift) % axis_len
+            for axis_index, axis_shift, axis_len in zip(multi_index, multi_shift, self.shape))
+
+        return self._ids[shifted_multi_index]
 
     def move_from_strs(self, move_strs):
         self.move(MoveComp.from_strs(move_strs))
@@ -477,7 +488,7 @@ class RotComp(list):
         src_perm = LinearPuzzle.from_rotcomp(self)
         dst_perm = LinearPuzzle(src_perm)
         dst_perm.rot(self)
-        src_perm.reattribute_ids_based_on(dst_perm)
+        src_perm.recompute_ids(dst_perm)
         return src_perm.get_rotcomp_solution()
 
     def _compress_old(self):
