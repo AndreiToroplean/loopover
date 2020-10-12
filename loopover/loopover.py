@@ -14,26 +14,34 @@ else:
 
 
 class Puzzle(ABC):
-    def __init__(self, board):
+    def __init__(self, board, *, ids=None):
+        self.board: np.ndarray
+        self._ids: np.ndarray
+
         if isinstance(board, Puzzle):
-            self.board = np.array(board.board, dtype=str)
+            self.board = board.board.copy()
+            self._ids = board._ids.copy()
             return
 
         self.board = np.array(board, dtype=str)
+        self._ids = self._get_indices_array()
+
+        if ids is not None:
+            self._ids = np.array(ids)
 
     @classmethod
     @abstractmethod
-    def from_shape(cls, shape, do_randomize=False):
-        board = cls._indices_array(shape=shape)
+    def from_shape(cls, shape, *, randomize=False):
+        board = cls._get_indices_array(shape=shape)
         loopover_puzzle = cls(board)
 
-        if do_randomize:
+        if randomize:
             loopover_puzzle.randomize_perm()
 
         return loopover_puzzle
 
     @abstractmethod
-    def find_solution(self, solved_perm):
+    def get_solution(self):
         pass
 
     @abstractmethod
@@ -41,33 +49,50 @@ class Puzzle(ABC):
         pass
 
     @abstractmethod
-    def rotate(self, rot_comp):
-        pass
-
-    def _indices_array(self=None, *, shape=None) -> np.ndarray:
-        if shape is None:
-            shape = self.shape
-
-        return np.arange(prod(shape), dtype=int).reshape(shape)
-
-    @property
-    @abstractmethod
-    def _pretty_repr(self):
+    def rot(self, rotcomp):
         pass
 
     @abstractmethod
-    def __repr__(self):
+    def _get_pretty_repr(self, *, use_ids=False):
         pass
+
+    @abstractmethod
+    def randomize_perm(self):
+        pass
+
+    def __str__(self):
+        return self.__repr__(with_meta=False)
+
+    def __repr__(self, *, with_meta=True):
+        str_meta = f", ids={self._ids.tolist()}" if with_meta else ""
+        return f"{type(self).__name__}({self.board.tolist()}{str_meta})"
 
     @property
     def shape(self):
         return self.board.shape
 
-    def randomize_perm(self):
-        shape = self.board.shape
-        new_board = self.board.flatten()
-        np.random.shuffle(new_board)
-        self.board = new_board.reshape(shape)
+    @property
+    def n_pieces(self):
+        return prod(self.shape)
+
+    def reattribute_ids_based_on(self, solved_board):
+        solved_puzzle = type(self)(solved_board)
+        if not self.is_perm_of(solved_puzzle):
+            raise PuzzlePermError
+
+        src_ordering = self.board.ravel().argsort()
+        dst_ordering = solved_puzzle.board.ravel().argsort()
+
+        self._ids.ravel()[src_ordering] = dst_ordering
+
+    def _get_multi_index_where_id_is(self, id_):
+        return np.where(self._ids == id_)
+
+    def _get_indices_array(self=None, *, shape=None) -> np.ndarray:
+        if shape is None:
+            shape = self.shape
+
+        return np.arange(prod(shape), dtype=int).reshape(shape)
 
     def is_perm_of(self, other):
         if self.board.shape != other.board.shape:
@@ -75,94 +100,119 @@ class Puzzle(ABC):
 
         return np.array_equal(np.sort(self.board, axis=None), np.sort(other.board, axis=None))
 
+    def get_rotcomp_solution(self):
+        rotcomp = RotComp()
+        visited_indices = []
+
+        for id_ in self._ids.ravel():
+            if id_ in visited_indices:
+                continue
+
+            rotcomp.append(Rot())
+            while id_ not in visited_indices:
+                visited_indices.append(id_)
+                rotcomp[-1].append(id_)
+                id_ = self._ids[self._unravel_index(id_)]
+
+            if len(rotcomp[-1]) < 2:
+                del rotcomp[-1]
+
+        return rotcomp
+
     def draw(self):
-        print(self._pretty_repr)
+        print(self._get_pretty_repr())
 
-    def indices_flat_iter(self):
-        return self._indices_array().flat
+    def draw_ids(self):
+        print(self._get_pretty_repr(use_ids=True))
 
-    def index(self, cell):
-        return int(np.where(self.board.flat == cell)[0])
+    def _unravel_index(self, indices):
+        return np.unravel_index(indices, self.shape)
 
-    def __getitem__(self, index_):
-        return self.board.flat[index_]
+    def _ravel_multi_index(self, multi_indices):
+        return np.ravel_multi_index(multi_indices, self.shape)
 
-    def __setitem__(self, index_, value):
-        self.board.flat[index_] = value
-
-    def __iter__(self):
-        return iter(self.board)
-
-    def __eq__(self, other):
-        return (self.board == other.board).all()
+    def _index_from_id(self, id_):
+        return int(np.where(self._ids.flat == id_)[0])
 
 
 class LinearPuzzle(Puzzle):
-    def __init__(self, board):
-        super().__init__(board)
+    def __init__(self, board, *, ids=None):
+        super().__init__(board, ids=ids)
 
     @classmethod
-    def from_shape(cls, shape, do_randomize=False):
+    def from_shape(cls, shape, *, randomize=False):
         if len(shape) != 1:
             raise PuzzleDimError
-        return super().from_shape(shape, do_randomize=do_randomize)
+        return super().from_shape(shape, randomize=randomize)
 
     @classmethod
-    def from_rot_comp(cls, rot_comp):
-        return cls.from_shape(((rot_comp.max_index + 1), ))
+    def from_rotcomp(cls, rotcomp):
+        return cls.from_shape(((rotcomp.max_index + 1), ))
 
-    def find_solution(self, solved_perm):
-        rot_comp = RotComp.from_src_dst_perms(self, solved_perm)
-        return rot_comp
+    def randomize_perm(self):
+        rotcomp = RotComp.from_random(
+            n_rots=self.n_pieces,
+            max_index=self.n_pieces,
+            max_len=self.n_pieces,
+            )
+
+        self.rot(rotcomp)
+
+    def get_solution(self):
+        solution = self.get_rotcomp_solution()
+        return solution
 
     def apply_solution(self, solution):
-        self.rotate(solution)
+        self.rot(solution)
 
-    def rotate(self, rot_comp):
-        rot_comp = RotComp(rot_comp)
+    def rot(self, rotcomp):
+        rotcomp = RotComp(rotcomp)
+        ted_ids = self._ids.copy()
+        ted_board = self.board.copy()
+        for rot in rotcomp:
+            for src_id, dst_id in zip(rot.roll(), rot):
+                dst_multi_index = self._get_multi_index_where_id_is(dst_id)
+                ted_ids[dst_multi_index] = src_id
+                ted_board[dst_multi_index] = self.board[self._get_multi_index_where_id_is(src_id)]
 
-        indices_board = self._indices_array()
-        for rot in rot_comp:
-            dst_indices_places = [np.where(indices_board == dst_index) for dst_index in rot]
-            for src_index, dst_index_place in zip(rot.roll(), dst_indices_places):
-                indices_board[dst_index_place] = src_index
+        self._ids = ted_ids
+        self.board = ted_board
 
-        self[:] = self[indices_board]
-
-    @property
-    def _pretty_repr(self):
+    def _get_pretty_repr(self, *, use_ids=False):
+        board_to_repr = self.board if not use_ids else self._ids
         if HAS_TABULATE:
-            str_ = tabulate([self.board], tablefmt="fancy_grid")
+            str_ = tabulate([board_to_repr], tablefmt="fancy_grid")
         else:
-            str_ = " ".join(f"{cell:>3}" for cell in self)
+            str_ = " ".join(f"{piece:>3}" for piece in board_to_repr.flat)
         return str_
-
-    def __repr__(self):
-        return f"{type(self).__name__}({self.board})"
 
 
 class LoopoverPuzzle(Puzzle):
-    def __init__(self, board):
-        super().__init__(board)
-        self.applied_moves = []
+    def __init__(self, board, *, ids=None):
+        super().__init__(board, ids=ids)
+        self.applied_moves = MoveComp()
 
     @classmethod
-    def from_shape(cls, shape, do_randomize=False):
+    def from_shape(cls, shape, *, randomize=False):
         if len(shape) != 2:
             raise PuzzleDimError
-        return super().from_shape(shape, do_randomize=do_randomize)
+        return super().from_shape(shape, randomize=randomize)
 
-    def draw_cell(self, index):
-        print(f"({', '.join(str(i) for i in index)}): {self[index]}")
+    def randomize_perm(self):
+        movecomp = self.get_random_movecomp(
+            len_=self.n_pieces,
+            )
 
-    def find_solution(self, solved_perm):
+        self.move(movecomp)
+
+    def get_solution(self):
         # TODO: WIP
         working_perm = type(self)(self)
 
         while True:
-            rot_comp = RotComp.from_src_dst_perms(working_perm, solved_perm)
+            rotcomp = working_perm.get_rotcomp_solution()
             try:
-                rot_comp.to_tris(be_strict=True)
+                rotcomp.to_tris(be_strict=True)
             except RotCompSubdivideError:
                 for axis, dim in enumerate(working_perm.shape):
                     if dim % 2 == 0:
@@ -175,76 +225,90 @@ class LoopoverPuzzle(Puzzle):
             else:
                 break
 
-        working_perm.rotate(rot_comp)
+        working_perm.rot(rotcomp)
 
         return
 
     def apply_solution(self, solution):
         pass
 
-    def rotate(self, rot_comp):
+    def rot(self, rotcomp):
         # TODO: WIP
-        rot_comp = RotComp(rot_comp)
+        rotcomp = RotComp(rotcomp)
 
-        indices_board = self._indices_array()
-        for rot in rot_comp:
+        indices_board = self._get_indices_array()
+        for rot in rotcomp:
             dst_indices = [np.where(indices_board == raw_dst_index) for raw_dst_index in rot]
             for src_index, dst_index in zip(rot.roll(), dst_indices):
                 indices_board[dst_index] = src_index
 
-            self._app_rot(dst_indices)
+            self._apply_rot(self._unravel_index(dst_indices))
 
-    def _app_rot(self, dst_indices):
+    def _apply_rot(self, dst_multi_indices):
         # TODO: WIP
-        center_index = self._center_index(dst_indices)
-        paths_to_center = [self._shortest_path(index_, center_index) for index_ in dst_indices]
-        paths_to_center.sort(key=lambda path: path.distance, reverse=True)
-        self.move(paths_to_center.pop())
+        center_index = self._get_center_multi_index(dst_multi_indices)
+        print("center", self._ravel_multi_index(center_index))  # for debug
+        paths_to_center = [tuple(self._get_shortest_path(index_, center_index, first_axis) for first_axis in range(2))
+            for index_ in zip(*dst_multi_indices)]
+        paths_to_center.sort(key=lambda paths: paths[0].distance, reverse=True)
+        path_closest_to_center = paths_to_center.pop()[0]
+        self.move(path_closest_to_center)
+        self.draw()  # for debug
+        first_path = MoveComp([paths_to_center[0][0][0], paths_to_center[1][1][0]])
+        second_path = MoveComp([paths_to_center[0][1][0], paths_to_center[1][0][0]])
+        print(first_path, second_path, sep="\n")  # for debug
+        if first_path.distance < second_path.distance:
+            self.move(first_path)
+        else:
+            self.move(second_path)
+        self.draw()  # for debug
 
-    def _center_index(self, indices):
-        multi_indices = self._unravel_index(indices)
+    def _get_center_multi_index(self, multi_indices):
         mean_multi_index = []
         for axis_len, axis_index in zip(self.shape, multi_indices):
             mean_multi_index.append(round(modular_mean(axis_index, axis_len)) % axis_len)
 
-        return self._ravel_multi_index(mean_multi_index)
+        return mean_multi_index
 
-    def _shortest_path(self, src_index, dst_index):
-        shifts = [dst_axis_index - src_axis_index for src_axis_index, dst_axis_index in zip(src_index, dst_index)]
+    def _get_shortest_path(self, src_multi_index, dst_multi_index, first_axis=0):
+        shifts = [dst_axis_index - src_axis_index
+            for src_axis_index, dst_axis_index in zip(src_multi_index, dst_multi_index)]
 
-        move_comp = MoveComp()
-        for axis, axis_len in self.shape:
-            shift = self._smallest_shift(shifts[axis], axis_len)
-            index_ = dst_index[axis ^ 1]
-            move_comp.append(Move(axis, index_, shift))
+        if first_axis == 0:
+            axes = (0, 1)
+        elif first_axis == 1:
+            axes = (1, 0)
+        else:
+            raise IndexError("first_axis must be 1 or 0.")
 
-        return move_comp
+        movecomp = MoveComp()
+        for i, axis in enumerate(axes):
+            shift = self._get_smallest_shift(shifts[axis], self.shape[axis])
+            index_ = [src_multi_index[axis ^ 1], dst_multi_index[axis ^ 1]][i]
+            movecomp.append(Move(axis, index_, shift))
+
+        return movecomp
 
     @staticmethod
-    def _smallest_shift(shift, axis_len):
+    def _get_smallest_shift(shift, axis_len):
         return (shift + (axis_len // 2)) % axis_len - axis_len // 2
-
-    def _unravel_index(self, indices):
-        return np.unravel_index(indices, self.shape)
-
-    def _ravel_multi_index(self, multi_indices):
-        return np.ravel_multi_index(multi_indices, self.shape)
 
     def move_from_strs(self, move_strs):
         self.move(MoveComp.from_strs(move_strs))
 
-    def move(self, move_comp):
-        move_comp = MoveComp(move_comp)
+    def move(self, movecomp):
+        movecomp = MoveComp(movecomp)
 
-        for move in move_comp:
-            if move.axis == 0:
-                self.board[:, move.index_] = np.roll(self.board[:, move.index_], move.shift)
-            else:
-                self.board[move.index_, :] = np.roll(self.board[move.index_, :], move.shift)
+        for move in movecomp:
+            for board in (self.board, self._ids):
+                if move.axis == 0:
+                    board[:, move.index_] = np.roll(board[:, move.index_], move.shift)
+                else:
+                    board[move.index_, :] = np.roll(board[move.index_, :], move.shift)
 
             self.applied_moves.append(move)
 
-    def random_move_comp(self, len_=1):
+    def get_random_movecomp(self, len_=1):
         return MoveComp([self._random_move for _ in range(len_)])
 
     @property
@@ -255,19 +319,13 @@ class LoopoverPuzzle(Puzzle):
 
         return Move(axis, index_, shift)
 
-    @property
-    def _pretty_repr(self):
+    def _get_pretty_repr(self, *, use_ids=False):
+        board_to_repr = self.board if not use_ids else self._ids
         if HAS_TABULATE:
-            str_ = tabulate(self.board, tablefmt="fancy_grid")
+            str_ = tabulate(board_to_repr, tablefmt="fancy_grid")
         else:
-            str_ = "\n".join((" ".join(f"{cell:>3}" for cell in row)) for row in self.board)
+            str_ = "\n".join((" ".join(f"{piece:>3}" for piece in row)) for row in board_to_repr)
         return str_
-
-    def index_2d(self, cell):
-        return np.where(self.board == cell)
-
-    def __repr__(self):
-        return f"{type(self).__name__}({self.board.tolist()})"
 
 
 class RotComp(list):
@@ -308,29 +366,6 @@ class RotComp(list):
             self._max_index = rots.max_index
         else:
             self._max_index = max_index
-
-    @classmethod
-    def from_src_dst_perms(cls, src_perm: Puzzle, dst_perm: Puzzle):
-        if not src_perm.is_perm_of(dst_perm):
-            raise RotCompPermError
-
-        rot_comp = cls()
-        visited_indices = []
-
-        for index_ in src_perm.indices_flat_iter():
-            if index_ in visited_indices:
-                continue
-
-            rot_comp.append(Rot())
-            while index_ not in visited_indices:
-                visited_indices.append(index_)
-                rot_comp[-1].append(index_)
-                index_ = dst_perm.index(src_perm[index_])
-
-            if len(rot_comp[-1]) < 2:
-                del rot_comp[-1]
-
-        return rot_comp
 
     @classmethod
     def from_random(cls, n_rots=1, max_n_rots=None, *, max_index=10, max_len=10):
@@ -378,7 +413,7 @@ class RotComp(list):
         if use_ids:
             order = self._order_from_id(order)
 
-        new_rot_comp = type(self)()
+        new_rotcomp = type(self)()
         new_ids = []
         min_available_id = self._min_available_id
 
@@ -386,13 +421,13 @@ class RotComp(list):
             new_ids.append(id_)
             if order is None or order_ == order:
                 subdivs = rot.subdivide(len_)
-                new_rot_comp += subdivs
+                new_rotcomp += subdivs
                 for _ in range(len(subdivs) - 1):
                     new_ids.append(min_available_id)
                     min_available_id += 1
             else:
-                new_rot_comp.append(rot)
-        self[:] = new_rot_comp[:]
+                new_rotcomp.append(rot)
+        self[:] = new_rotcomp[:]
 
         self._ids = new_ids
 
@@ -436,10 +471,11 @@ class RotComp(list):
 
     @property
     def compressed(self):
-        src_perm = LinearPuzzle.from_rot_comp(self)
+        src_perm = LinearPuzzle.from_rotcomp(self)
         dst_perm = LinearPuzzle(src_perm)
-        dst_perm.rotate(self)
-        return RotComp.from_src_dst_perms(src_perm, dst_perm)
+        dst_perm.rot(self)
+        src_perm.reattribute_ids_based_on(dst_perm)
+        return src_perm.get_rotcomp_solution()
 
     def _compress_old(self):
         """Not finished implementation. """
@@ -613,10 +649,10 @@ class RotComp(list):
         self.fuse(src_order, src_order - 1)
 
     def fuse(self, dst_order=0, *src_orders, use_ids=False):
-        """Attempt fusing rots at src_orders, in the given order, into rotate at dst_order.
+        """Attempt fusing rots at src_orders, in the given order, into rot at dst_order.
 
         If no dst_order is given, use 0.
-        If no src_order is given, repeatedly fuse the rotate at dst_order+1 until no more fuse is possible.
+        If no src_order is given, repeatedly fuse the rot at dst_order+1 until no more fuse is possible.
         If two rots cancel out, stop fusing.
         """
         if use_ids:
@@ -708,8 +744,8 @@ class RotComp(list):
         if self[src_order] == self[dst_order] or not dir_:
             return
 
-        transformed_rot = self._remapped_through(src_order, dst_order)
-        self[dst_order], self[src_order] = transformed_rot, self[dst_order]
+        ted_rot = self._remapped_through(src_order, dst_order)
+        self[dst_order], self[src_order] = ted_rot, self[dst_order]
 
         self._ids[dst_order], self._ids[src_order] = self._ids[src_order], self._ids[dst_order]
 
@@ -730,15 +766,15 @@ class RotComp(list):
         return remapped_rot
 
     def print_with_orders(self, *, use_ids=False):
-        str_rot_comp = repr(self)
+        str_rotcomp = repr(self)
         str_before_list = f"{type(self).__name__}(["
         len_before_list = len(str_before_list)
         str_orders = " " * (len_before_list + 1)
-        str_list = str_rot_comp[len_before_list:]
+        str_list = str_rotcomp[len_before_list:]
         for order, str_rot in enumerate(str_list.split("[")[1:]):
             str_order = str(self._id_from_order(order) if use_ids else order)
             str_orders += str_order + " " * (len(str_rot) - len(str_order) + 1)
-        print(str_rot_comp)
+        print(str_rotcomp)
         print(str_orders)
 
     def print_with_ids(self):
@@ -783,11 +819,11 @@ class RotComp(list):
         return super_rtn
 
     def __neg__(self):
-        rot_comp = type(self)()
+        rotcomp = type(self)()
         for rot in reversed(self):
-            rot_comp.append(-rot)
+            rotcomp.append(-rot)
 
-        return rot_comp
+        return rotcomp
 
     def __eq__(self, other):
         return super(type(self), self.compressed).__eq__(other.compressed)
@@ -919,40 +955,40 @@ class MoveComp(list):
 
     @property
     def compressed(self):
-        new_move_comp = type(self)(self)
+        new_movecomp = type(self)(self)
         while True:
             iter_n_fused = 0
             current_axis = -1
-            iter_move_comp = type(new_move_comp)()
-            move_comps_per_axis = []
-            for move in new_move_comp:
+            iter_movecomp = type(new_movecomp)()
+            movecomps_per_axis = []
+            for move in new_movecomp:
                 if move.axis != current_axis:
                     current_axis = move.axis
-                    move_comps_per_axis.append(type(new_move_comp)())
+                    movecomps_per_axis.append(type(new_movecomp)())
 
-                move_comps_per_axis[-1].append(move)
+                movecomps_per_axis[-1].append(move)
 
-            for axis_move_comp in move_comps_per_axis:
-                axis_move_comp.sort(key=lambda m: m.index_)
+            for axis_movecomp in movecomps_per_axis:
+                axis_movecomp.sort(key=lambda m: m.index_)
                 current_index = -1
-                move_comps_per_index = []
-                for axis_move in axis_move_comp:
+                movecomps_per_index = []
+                for axis_move in axis_movecomp:
                     if axis_move.index_ != current_index:
                         current_index = axis_move.index_
-                        move_comps_per_index.append(type(new_move_comp)())
+                        movecomps_per_index.append(type(new_movecomp)())
 
-                    move_comps_per_index[-1].append(axis_move)
+                    movecomps_per_index[-1].append(axis_move)
 
-                for index_move_comp in move_comps_per_index:
-                    iter_n_fused += index_move_comp.fuse()
-                    iter_move_comp += index_move_comp
+                for index_movecomp in movecomps_per_index:
+                    iter_n_fused += index_movecomp.fuse()
+                    iter_movecomp += index_movecomp
 
             if iter_n_fused == 0:
                 break
 
-            new_move_comp = iter_move_comp
+            new_movecomp = iter_movecomp
 
-        return new_move_comp
+        return new_movecomp
 
     def compress(self):
         self[:] = self.compressed
@@ -1013,6 +1049,9 @@ class MoveComp(list):
 
     def append(self, move):
         super().append(Move(*move))
+
+    def __str__(self):
+        return self.__repr__()
 
     def __repr__(self):
         return f"{type(self).__name__}([{', '.join(repr(tuple(move)) for move in self)}])"
@@ -1123,6 +1162,11 @@ class PuzzleError(Exception):
     pass
 
 
+class PuzzlePermError(PuzzleError):
+    def __init__(self, message="self and other are not permutations of one another."):
+        super().__init__(message)
+
+
 class PuzzleDimError(PuzzleError):
     def __init__(self, message="Wrong dimension for this type of puzzle."):
         super().__init__(message)
@@ -1130,11 +1174,6 @@ class PuzzleDimError(PuzzleError):
 
 class RotCompError(Exception):
     pass
-
-
-class RotCompPermError(RotCompError):
-    def __init__(self, message="The given src_perm and dst_perm arguments are not permutations of the same puzzle."):
-        super().__init__(message)
 
 
 class RotCompIdsError(RotCompError):
@@ -1202,9 +1241,7 @@ def modular_mean(values, mod):
 
 
 def loopover(mixed_up_board, solved_board):
-    puzzle = LoopoverPuzzle(mixed_up_board, solved_board)
-    puzzle.find_solution()
-    return puzzle.applied_moves_as_strs
+    pass
 
 
 if __name__ == "__main__":
