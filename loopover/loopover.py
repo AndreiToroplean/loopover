@@ -1,9 +1,16 @@
 import random
 from abc import ABC, abstractmethod
 from itertools import count
-from math import prod
 
 import numpy as np
+
+try:
+    from math import prod
+except ImportError:
+    from functools import reduce
+
+    def prod(iterable):
+        return reduce(lambda x, y: x*y, iterable, 1)
 
 try:
     from tabulate import tabulate
@@ -1392,12 +1399,11 @@ def smallest_shift(shift, mod):
     return (shift + (mod // 2)) % mod - mod // 2
 
 
-if __name__ == "__main__":
-    pass
+def loopover(mixed_up_board, solved_board):
+    puzzle = LoopoverPuzzle(mixed_up_board)
+    puzzle.recompute_ids(solved_board)
+    solution = puzzle.get_solution()
+    if solution is None:
+        return None
 
-    # def loopover(mixed_up_board, solved_board):
-    #     pass
-    #
-    # def board_form_str(str_):
-    #     return [list(row) for row in str_.split('\n')]
-
+    return solution.as_strs
