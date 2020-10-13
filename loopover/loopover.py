@@ -80,6 +80,20 @@ class Puzzle(ABC):
     def n_pieces(self):
         return prod(self.shape)
 
+    def _rot_directly(self, rotcomp):
+        rotcomp = RotComp(rotcomp)
+
+        ted_perm = self.copy()
+        for rot in rotcomp:
+            previous_perm = ted_perm.copy()
+            for src_id, dst_id in zip(rot.roll(), rot):
+                dst_multi_index = previous_perm._get_multi_index_from_id(dst_id)
+                ted_perm._ids[dst_multi_index] = src_id
+                ted_perm.board[dst_multi_index] = previous_perm.board[previous_perm._get_multi_index_from_id(src_id)]
+
+        self._ids = ted_perm._ids
+        self.board = ted_perm.board
+
     def copy(self):
         return type(self)(self)
 
@@ -171,18 +185,7 @@ class LinearPuzzle(Puzzle):
         self.rot(solution)
 
     def rot(self, rotcomp):
-        rotcomp = RotComp(rotcomp)
-
-        ted_ids = self._ids.copy()
-        ted_board = self.board.copy()
-        for rot in rotcomp:
-            for src_id, dst_id in zip(rot.roll(), rot):
-                dst_multi_index = self._get_multi_index_from_id(dst_id)
-                ted_ids[dst_multi_index] = src_id
-                ted_board[dst_multi_index] = self.board[self._get_multi_index_from_id(src_id)]
-
-        self._ids = ted_ids
-        self.board = ted_board
+        self._rot_directly(rotcomp)
 
     def _get_pretty_repr(self, *, use_ids=False):
         board_to_repr = self.board if not use_ids else self._ids
@@ -212,7 +215,6 @@ class LoopoverPuzzle(Puzzle):
         self.move(movecomp)
 
     def get_solution(self):
-        # TODO: WIP
         working_perm = self.copy()
 
         while True:
@@ -233,7 +235,7 @@ class LoopoverPuzzle(Puzzle):
 
         working_perm.rot(rotcomp)
 
-        solution = self.applied_moves
+        solution = working_perm.applied_moves.compressed
 
         return solution
 
@@ -241,49 +243,106 @@ class LoopoverPuzzle(Puzzle):
         self.move(solution)
 
     def rot(self, rotcomp):
-        # TODO: WIP
         rotcomp = RotComp(rotcomp)
 
-        ted_ids = self._ids.copy()
         for rot in rotcomp:
-            for src_id, dst_id in zip(rot.roll(), rot):
-                dst_multi_index = self._get_multi_index_from_id(dst_id)
-                ted_ids[dst_multi_index] = src_id
+            self._apply_tri_rot(rot)
 
-            self._apply_rot(rot)
+    def _apply_tri_rot(self, rot):
+        if len(rot) != 3:
+            raise LoopoverPuzzleRotError
 
-    def _apply_rot(self, rot):
-        # TODO: WIP
-        center_id = self._get_center_id(rot)
-        print("center_id", center_id)  # for debug
-        paths_to_center = [tuple(self._get_shortest_path(id_, center_id, first_axis) for first_axis in range(2))
-            for id_ in rot]
-        paths_to_center.sort(key=lambda paths: paths[0].distance, reverse=True)
-        path_closest_to_center = paths_to_center.pop()[0]
-        self.move(path_closest_to_center)
-        self.draw_ids()  # for debug
-        first_path = MoveComp([paths_to_center[0][0][0], paths_to_center[1][1][0]])
-        second_path = MoveComp([paths_to_center[0][1][0], paths_to_center[1][0][0]])
-        print(first_path, second_path, sep="\n")  # for debug
-        if first_path.distance < second_path.distance:
-            self.move(first_path)
+        setup_movecomp, main_id, id_a, id_b = self._get_setup_movecomp(rot)
+
+        self.move(setup_movecomp)
+
+        op_a = self._get_shortest_path(id_a, main_id)
+        op_b = self._get_shortest_path(id_b, main_id)
+        rot.roll_to(main_id, to_front=False)
+        if rot[1] == id_b:
+            op_movecomp = op_a + op_b - op_a - op_b
         else:
-            self.move(second_path)
-        self.draw_ids()  # for debug
+            op_movecomp = op_b + op_a - op_b - op_a
+
+        self.move(op_movecomp)
+
+        self.move(-setup_movecomp)
+
+    def _get_setup_movecomp(self, rot):
+        setup_movecomp = MoveComp()
+
+        center_id = self._get_center_id(rot)
+
+        # Finding both possible paths from each id of rot to the center id.
+        paths_to_center = []
+        for id_ in rot:
+            paths_per_id = (
+                self._get_shortest_path(id_, center_id, first_axis=0),
+                self._get_shortest_path(id_, center_id, first_axis=1),
+                id_,
+            )
+            paths_to_center.append(paths_per_id)
+
+        # In order of total distance, finding one id that's already aligned on at least one axis with center_id, to
+        # move it there for the beginning of the setup movecomp:
+        paths_to_center.sort(key=lambda x: x[0].distance)
+        for path_to_center in paths_to_center:
+            if path_to_center[0][0] == 0 or path_to_center[0][1] == 0:
+                paths_to_center.remove(path_to_center)
+                main_id = path_to_center[2]
+                path_main_id_to_center = path_to_center[0]
+                break
+        else:
+            raise
+        setup_movecomp += path_main_id_to_center
+
+        # Unpacking paths_to_center for readability:
+        paths_id_a, paths_id_b = paths_to_center
+        path_id_a_first_axis_0, path_id_a_first_axis_1, id_a = paths_id_a
+        path_id_b_first_axis_0, path_id_b_first_axis_1, id_b = paths_id_b
+
+        if path_id_a_first_axis_0[0] == 0:
+            if path_id_b_first_axis_0[0] == 0:
+                move_a_axis, move_a_index, _ = path_id_a_first_axis_0[0]
+                move_a = Move(move_a_axis, move_a_index, 1)
+                move_b_axis, move_b_index, move_b_shift = path_id_a_first_axis_0[1]
+                move_b = Move(move_b_axis, (move_b_index + 1) % self.shape[move_b_axis ^ 1], move_b_shift)
+                setup_movecomp += MoveComp([move_a, move_b])
+            else:
+                setup_movecomp += MoveComp([path_id_a_first_axis_0[0], path_id_b_first_axis_1[0]])
+            return setup_movecomp, main_id, id_a, id_b
+
+        if path_id_a_first_axis_1[0] == 0:
+            if path_id_b_first_axis_1[0] == 0:
+                move_a_axis, move_a_index, _ = path_id_a_first_axis_1[0]
+                move_a = Move(move_a_axis, move_a_index, 1)
+                move_b_axis, move_b_index, move_b_shift = path_id_a_first_axis_1[1]
+                move_b = Move(move_b_axis, (move_b_index + 1) % self.shape[move_b_axis ^ 1], move_b_shift)
+                setup_movecomp += MoveComp([move_a, move_b])
+            else:
+                setup_movecomp += MoveComp([path_id_a_first_axis_1[0], path_id_b_first_axis_0[0]])
+            return setup_movecomp, main_id, id_a, id_b
+
+        if path_id_b_first_axis_1[0] == 0:
+            setup_movecomp += MoveComp([path_id_a_first_axis_0[0], path_id_b_first_axis_1[0]])
+        else:
+            setup_movecomp += MoveComp([path_id_a_first_axis_1[0], path_id_b_first_axis_0[0]])
+
+        return setup_movecomp, main_id, id_a, id_b
 
     def _get_center_id(self, rot):
         multi_indices = zip(*(self._get_multi_index_from_id(id_) for id_ in rot))
 
         mean_multi_index = []
         for axis_len, axis_indices in zip(self.shape, multi_indices):
-            mean_multi_index.append(round(modular_mean(axis_indices, axis_len)) % axis_len)
+            mean_multi_index.append(modular_median(axis_indices, axis_len))
 
         return self._ids[tuple(mean_multi_index)]
 
-    def _get_shortest_path(self, src_id, dst_id, first_axis=0):
+    def _get_shortest_path(self, src_id, dst_id, *, first_axis=0):
         src_multi_index = self._get_multi_index_from_id(src_id)
         dst_multi_index = self._get_multi_index_from_id(dst_id)
-        multi_shift = tuple(self._get_smallest_shift(dst_axis_index - src_axis_index, axis_len)
+        multi_shift = tuple(smallest_shift(dst_axis_index - src_axis_index, axis_len)
             for src_axis_index, dst_axis_index, axis_len in zip(src_multi_index, dst_multi_index, self.shape))
 
         if first_axis == 0:
@@ -300,24 +359,6 @@ class LoopoverPuzzle(Puzzle):
             movecomp.append(Move(axis, index_, shift))
 
         return movecomp
-
-    def rot_directly(self, rotcomp):
-        rotcomp = RotComp(rotcomp)
-
-        ted_ids = self._ids.copy()
-        ted_board = self.board.copy()
-        for rot in rotcomp:
-            for src_id, dst_id in zip(rot.roll(), rot):
-                dst_multi_index = self._get_multi_index_from_id(dst_id)
-                ted_ids[dst_multi_index] = src_id
-                ted_board[dst_multi_index] = self.board[self._get_multi_index_from_id(src_id)]
-
-        self._ids = ted_ids
-        self.board = ted_board
-
-    @staticmethod
-    def _get_smallest_shift(axis_shift, axis_len):
-        return (axis_shift + (axis_len // 2)) % axis_len - axis_len // 2
 
     def _get_shifted_id(self, id_, multi_shift):
         multi_index = self._get_multi_index_from_id(id_)
@@ -1178,6 +1219,10 @@ class Move(tuple):
 
         return cls(axis, index_, shift)
 
+    @classmethod
+    def null(cls):
+        return cls(0, 0, 0)
+
     @property
     def as_strs(self):
         if self.shift == 0:
@@ -1250,6 +1295,15 @@ class PuzzleDimError(PuzzleError):
         super().__init__(message)
 
 
+class LoopoverPuzzleError(PuzzleError):
+    pass
+
+
+class LoopoverPuzzleRotError(PuzzleError):
+    def __init__(self, message="Cannot apply a non-tri rot to a LoopoverPuzzle."):
+        super().__init__(message)
+
+
 class RotCompError(Exception):
     pass
 
@@ -1318,14 +1372,32 @@ def modular_mean(values, mod):
     return mean_value
 
 
-def loopover(mixed_up_board, solved_board):
-    pass
+def modular_median(values, mod):
+    """Return the modular median. """
+    if len(values) == 0:
+        raise ValueError
+
+    pot_medians_shifts = []
+    for pot_median in values:
+        tot_shift = 0
+        for value in values:
+            tot_shift += abs(smallest_shift(value - pot_median, mod))
+
+        pot_medians_shifts.append((pot_median, tot_shift))
+
+    return min(pot_medians_shifts, key=lambda x: x[1])[0]
+
+
+def smallest_shift(shift, mod):
+    return (shift + (mod // 2)) % mod - mod // 2
 
 
 if __name__ == "__main__":
+    pass
 
-    def board_form_str(str_):
-        return [list(row) for row in str_.split('\n')]
+    # def loopover(mixed_up_board, solved_board):
+    #     pass
+    #
+    # def board_form_str(str_):
+    #     return [list(row) for row in str_.split('\n')]
 
-    r = RotComp.from_random(5, max_index=32)
-    r.compress()
