@@ -68,6 +68,11 @@ class Puzzle(ABC):
         return f"{type(self).__name__}({self.board.tolist()}{str_meta})"
 
     @property
+    def is_solved(self):
+        ids_ravelled = self._ids.ravel()
+        return np.array_equal(ids_ravelled, np.sort(ids_ravelled))
+
+    @property
     def shape(self):
         return self.board.shape
 
@@ -168,8 +173,8 @@ class LinearPuzzle(Puzzle):
     def rot(self, rotcomp):
         rotcomp = RotComp(rotcomp)
 
-        ted_ids = self._ids.copy
-        ted_board = self.board.copy
+        ted_ids = self._ids.copy()
+        ted_board = self.board.copy()
         for rot in rotcomp:
             for src_id, dst_id in zip(rot.roll(), rot):
                 dst_multi_index = self._get_multi_index_from_id(dst_id)
@@ -278,8 +283,8 @@ class LoopoverPuzzle(Puzzle):
     def _get_shortest_path(self, src_id, dst_id, first_axis=0):
         src_multi_index = self._get_multi_index_from_id(src_id)
         dst_multi_index = self._get_multi_index_from_id(dst_id)
-        shifts = [int(dst_axis_index - src_axis_index)
-            for src_axis_index, dst_axis_index in zip(src_multi_index, dst_multi_index)]
+        multi_shift = tuple(self._get_smallest_shift(dst_axis_index - src_axis_index, axis_len)
+            for src_axis_index, dst_axis_index, axis_len in zip(src_multi_index, dst_multi_index, self.shape))
 
         if first_axis == 0:
             axes = (0, 1)
@@ -290,11 +295,25 @@ class LoopoverPuzzle(Puzzle):
 
         movecomp = MoveComp()
         for i, axis in enumerate(axes):
-            shift = self._get_smallest_shift(shifts[axis], self.shape[axis])
+            shift = multi_shift[axis]
             index_ = [src_multi_index[axis ^ 1], dst_multi_index[axis ^ 1]][i]
             movecomp.append(Move(axis, index_, shift))
 
         return movecomp
+
+    def rot_directly(self, rotcomp):
+        rotcomp = RotComp(rotcomp)
+
+        ted_ids = self._ids.copy()
+        ted_board = self.board.copy()
+        for rot in rotcomp:
+            for src_id, dst_id in zip(rot.roll(), rot):
+                dst_multi_index = self._get_multi_index_from_id(dst_id)
+                ted_ids[dst_multi_index] = src_id
+                ted_board[dst_multi_index] = self.board[self._get_multi_index_from_id(src_id)]
+
+        self._ids = ted_ids
+        self.board = ted_board
 
     @staticmethod
     def _get_smallest_shift(axis_shift, axis_len):
@@ -839,6 +858,29 @@ class RotComp(list):
 
         return rotcomp
 
+    def __add__(self, other):
+        other = type(self)(other)
+
+        return type(self)(
+            super().__add__(other),
+            ids=self._ids + [id_ + self._min_available_id for id_ in other._ids],
+            max_index=max(self.max_index, other.max_index)
+            )
+
+    def __iadd__(self, other):
+        other = type(self)(other)
+
+        super().__iadd__(other)
+        self._ids += [id_ + self._min_available_id for id_ in other._ids]
+        self._max_index = max(self.max_index, other.max_index)
+        return self
+
+    def __sub__(self, other):
+        return self + -other
+
+    def __isub__(self, other):
+        return self.__iadd__(-other)
+
     def __eq__(self, other):
         return super(type(self), self.compressed).__eq__(other.compressed)
 
@@ -1064,6 +1106,9 @@ class MoveComp(list):
     def append(self, move):
         super().append(Move(*move))
 
+    def insert(self, order, move):
+        super().insert(order, Move(*move))
+
     def __str__(self):
         return self.__repr__()
 
@@ -1073,10 +1118,27 @@ class MoveComp(list):
     def __neg__(self):
         return type(self)([-move for move in reversed(self)])
 
+    def __add__(self, other):
+        other = type(self)(other)
+
+        return type(self)(super().__add__(other))
+
+    def __iadd__(self, other):
+        other = type(self)(other)
+
+        super().__iadd__(other)
+        return self
+
+    def __sub__(self, other):
+        return self + -other
+
+    def __isub__(self, other):
+        return self.__iadd__(-other)
+
     def __eq__(self, other):
         other = type(self)(other)
 
-        super(type(self), self.compressed).__eq__(other.compressed)
+        return super(type(self), self.compressed).__eq__(other.compressed)
 
 
 class Move(tuple):
@@ -1160,6 +1222,8 @@ class Move(tuple):
                 return True
 
             return False
+        elif isinstance(other, int):
+            raise NotImplementedError
 
         super().__eq__(other)
 
