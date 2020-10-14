@@ -160,6 +160,18 @@ class Puzzle(ABC):
     def _get_multi_index_from_id(self, id_):
         return tuple(int(axis_index) for axis_index in np.where(self._ids == id_))
 
+    def has_equal_board(self, other):
+        if not isinstance(other, Puzzle):
+            raise TypeError("other has to be a Puzzle.")
+
+        return np.array_equal(self.board, other.board)
+
+    def has_equal_ids(self, other):
+        if not isinstance(other, Puzzle):
+            raise TypeError("other has to be a Puzzle.")
+
+        return np.array_equal(self._ids, other._ids)
+
 
 class LinearPuzzle(Puzzle):
     def __init__(self, board, *, ids=None):
@@ -449,10 +461,10 @@ class RotComp(list):
             self._max_index = max_index
 
     @classmethod
-    def from_random(cls, n_rots=1, max_n_rots=None, *, max_index=10, max_len=10):
+    def from_random(cls, n_rots=1, max_n_rots=None, *, max_index=16, len_=2, max_len=None):
         if max_n_rots is not None:
             n_rots = random.randint(n_rots, max_n_rots)
-        return cls([Rot.from_random(max_index, max_len) for _ in range(n_rots)])
+        return cls([Rot.from_random(max_index, len_, max_len) for _ in range(n_rots)])
 
     def count_by_len(self, len_):
         return sum(1 if len(rot) == len_ else 0 for rot in self)
@@ -945,9 +957,10 @@ class Rot(list):
         super().__init__(indices)
 
     @classmethod
-    def from_random(cls, max_index=10, max_len=10):
-        max_len = min(max_len, max_index)
-        len_ = random.randint(2, max_len)
+    def from_random(cls, max_index=16, len_=2, max_len=None):
+        if max_len is not None:
+            max_len = min(max_len, max_index)
+            len_ = random.randint(len_, max_len)
         rot = []
         while len(rot) < len_:
             index_ = random.randint(0, max_index - 1)
@@ -1076,21 +1089,21 @@ class MoveComp(list):
                 axis_movecomp.sort(key=lambda m: m.index_)
                 current_index = -1
                 movecomps_per_index = []
-                for axis_move in axis_movecomp:
-                    if axis_move.index_ != current_index:
-                        current_index = axis_move.index_
+                for move in axis_movecomp:
+                    if move.index_ != current_index:
+                        current_index = move.index_
                         movecomps_per_index.append(type(new_movecomp)())
 
-                    movecomps_per_index[-1].append(axis_move)
+                    movecomps_per_index[-1].append(move)
 
                 for index_movecomp in movecomps_per_index:
                     iter_n_fused += index_movecomp.fuse()
                     iter_movecomp += index_movecomp
 
+            new_movecomp = iter_movecomp
+
             if iter_n_fused == 0:
                 break
-
-            new_movecomp = iter_movecomp
 
         return new_movecomp
 
@@ -1277,7 +1290,7 @@ class Move(tuple):
         elif isinstance(other, int):
             raise NotImplementedError
 
-        super().__eq__(other)
+        return super().__eq__(other)
 
     _letter_to_axis_shift = {
         "R": (1, 1),

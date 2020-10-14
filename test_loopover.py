@@ -1,17 +1,46 @@
-import unittest
-from loopover import *
-
-
-class TestLoopoverPuzzle(unittest.TestCase):
+class TestLoopoverPuzzle:
     def test_get_solution(self):
-        for _ in range(10):
-            loopover_puzzle = LoopoverPuzzle.from_shape((10, 10), randomize=True)
-            loopover_puzzle_solved = LoopoverPuzzle.from_shape((10, 10), randomize=True)
-            loopover_puzzle.recompute_ids(loopover_puzzle_solved)
-            solution = loopover_puzzle.get_solution()
-            loopover_puzzle.apply_solution(solution)
-            self.assertTrue(loopover_puzzle.is_solved)
+        from loopover import LoopoverPuzzle
+        loopover_puzzle = LoopoverPuzzle.from_shape((10, 10), randomize=True)
+        loopover_puzzle_solved = LoopoverPuzzle.from_shape((10, 10), randomize=True)
+        loopover_puzzle.recompute_ids(loopover_puzzle_solved)
+        solution = loopover_puzzle.get_solution()
+        loopover_puzzle.apply_solution(solution)
+        assert loopover_puzzle.is_solved
+
+    def test_apply_tri_rot(self):
+        from loopover import LoopoverPuzzle, Rot
+        loopover_puzzle_a = LoopoverPuzzle.from_shape((10, 10), randomize=True)
+        loopover_puzzle_b = loopover_puzzle_a.copy()
+        tri_rot = Rot.from_random(max_index=loopover_puzzle_a.n_pieces, len_=3)
+        loopover_puzzle_a._rot_directly(tri_rot)
+        loopover_puzzle_b._apply_tri_rot(tri_rot)
+        assert loopover_puzzle_a.has_equal_board(loopover_puzzle_b)
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestRotComp:
+    def test_compressed(self):
+        from loopover import RotComp, LinearPuzzle
+        rotcomp = RotComp.from_random(4, max_index=16)
+        linear_puzzle_a = LinearPuzzle.from_rotcomp(rotcomp)
+        linear_puzzle_b = linear_puzzle_a.copy()
+        linear_puzzle_a.rot(rotcomp)
+        linear_puzzle_b.rot(rotcomp.compressed)
+        assert linear_puzzle_a.has_equal_board(linear_puzzle_b)
+
+
+class TestMoveComp:
+    def test_compressed(self):
+        from loopover import LoopoverPuzzle, MoveComp
+        loopover_puzzle_a = LoopoverPuzzle.from_shape((10, 10), randomize=True)
+        loopover_puzzle_b = loopover_puzzle_a.copy()
+        movecomp = loopover_puzzle_a.get_random_movecomp(100)
+        loopover_puzzle_a.move(movecomp.compressed)
+        loopover_puzzle_b.move(movecomp)
+        assert loopover_puzzle_a.has_equal_board(loopover_puzzle_b)
+
+    def test_as_strs(self):
+        from loopover import LoopoverPuzzle, MoveComp
+        loopover_puzzle = LoopoverPuzzle.from_shape((10, 10), randomize=True)
+        movecomp = loopover_puzzle.get_random_movecomp(10)
+        assert MoveComp.from_strs(movecomp.as_strs) == movecomp
