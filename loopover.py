@@ -1,3 +1,29 @@
+"""This module is meant for solving loopover puzzles, as defined in this challenge:
+https://www.codewars.com/kata/5c1d796370fee68b1e000611
+
+The latest version of this code can be found at:
+https://github.com/AndreiToroplean/loopover
+
+Author: Andrei Toroplean
+
+The interesting objects in this module are the classes LoopoverPuzzle and LinearPuzzle, and the function loopover.
+There is also, on a secondary level, the classes MoveComp and RotComp, which represent sequences (or compositions) of,
+respectively, Move and Rot objects.
+
+LoopoverPuzzle objects are the main focus here.  They represent a puzzle game with pieces arranged in a grid.  These
+pieces can slide horizontally and vertically, where in order to let a row or column slide, a piece will jump over to the
+other side of the row or column, in what is called a Move.
+A Rot (for rotation), is a generalization of the (higher-level) concept of swapping two pieces, but for an arbitrary
+number of pieces.  Those are ultimately implemented in terms of Moves when applied to LoopoverPuzzles.  Sequences of
+Moves and Rots are implemented as their own objects, through the classes RotComp and MoveComp respectively.
+LoopoverPuzzles have, conceptually, a solved state.  To get from a given state to the solved state, you want a solution
+in the form of a MoveComp object, and the object has methods to get and apply this solution.
+
+LinearPuzzle objects are a simplified version of LoopoverPuzzle ones.  Their solutions are directly RotComp objects, as
+they don't have the concept of a move, only that of a rot.  Other than that, they behave a lot like LoopoverPuzzles and
+as such, they are a great substitute to test algorithms on while dealing with less complexity.
+"""
+
 import random
 from abc import ABC, abstractmethod
 from itertools import count
@@ -20,12 +46,21 @@ else:
     HAS_TABULATE = True
 
 
-class Puzzle(ABC):
+class _Puzzle(ABC):
+    """Abstract, non-public parent class of LoopoverPuzzle and LinearPuzzle. """
+
     def __init__(self, board, *, ids=None):
+        """Build a _Puzzle object with its board and _ids attributes.
+
+        Args:
+            board: Array-like object describing the current state of the puzzle board.
+            ids: (optional, keyword-only) Array-like object used to uniquely identify the pieces of the board, also
+            representing their order in the solved permutation.
+        """
         self.board: np.ndarray
         self._ids: np.ndarray
 
-        if isinstance(board, Puzzle):
+        if isinstance(board, _Puzzle):
             self.board = board.board.copy()
             self._ids = board._ids.copy()
             return
@@ -161,61 +196,24 @@ class Puzzle(ABC):
         return tuple(int(axis_index) for axis_index in np.where(self._ids == id_))
 
     def has_equal_board(self, other):
-        if not isinstance(other, Puzzle):
+        if not isinstance(other, _Puzzle):
             raise TypeError("other has to be a Puzzle.")
 
         return np.array_equal(self.board, other.board)
 
     def has_equal_ids(self, other):
-        if not isinstance(other, Puzzle):
+        if not isinstance(other, _Puzzle):
             raise TypeError("other has to be a Puzzle.")
 
         return np.array_equal(self._ids, other._ids)
 
 
-class LinearPuzzle(Puzzle):
-    def __init__(self, board, *, ids=None):
-        super().__init__(board, ids=ids)
+class LoopoverPuzzle(_Puzzle):
+    """Represents a puzzle game with pieces arranged in a grid.  These pieces can slide horizontally and vertically,
+    where in order to let a row or column slide, a piece will jump over to the other side of the row or column,
+    in what is called a Move.
+    """
 
-    @classmethod
-    def from_shape(cls, shape, *, randomize=False):
-        if len(shape) != 1:
-            raise PuzzleDimError
-        return super().from_shape(shape, randomize=randomize)
-
-    @classmethod
-    def from_rotcomp(cls, rotcomp):
-        return cls.from_shape(((rotcomp.max_index + 1), ))
-
-    def randomize_perm(self):
-        rotcomp = RotComp.from_random(
-            n_rots=self.n_pieces,
-            max_index=self.n_pieces,
-            max_len=self.n_pieces,
-            )
-
-        self.rot(rotcomp)
-
-    def get_solution(self):
-        solution = self.get_rotcomp_solution()
-        return solution
-
-    def apply_solution(self, solution):
-        self.rot(solution)
-
-    def rot(self, rotcomp):
-        self._rot_directly(rotcomp)
-
-    def _get_pretty_repr(self, *, use_ids=False):
-        board_to_repr = self.board if not use_ids else self._ids
-        if HAS_TABULATE:
-            str_ = tabulate([board_to_repr], tablefmt="fancy_grid")
-        else:
-            str_ = " ".join(f"{piece:>3}" for piece in board_to_repr.flat)
-        return str_
-
-
-class LoopoverPuzzle(Puzzle):
     def __init__(self, board, *, ids=None):
         super().__init__(board, ids=ids)
         self.applied_moves = MoveComp()
@@ -354,14 +352,14 @@ class LoopoverPuzzle(Puzzle):
 
         mean_multi_index = []
         for axis_len, axis_indices in zip(self.shape, multi_indices):
-            mean_multi_index.append(modular_median(axis_indices, axis_len))
+            mean_multi_index.append(_modular_median(axis_indices, axis_len))
 
         return self._ids[tuple(mean_multi_index)]
 
     def _get_shortest_path(self, src_id, dst_id, *, first_axis=0):
         src_multi_index = self._get_multi_index_from_id(src_id)
         dst_multi_index = self._get_multi_index_from_id(dst_id)
-        multi_shift = tuple(smallest_shift(dst_axis_index - src_axis_index, axis_len)
+        multi_shift = tuple(_smallest_shift(dst_axis_index - src_axis_index, axis_len)
             for src_axis_index, dst_axis_index, axis_len in zip(src_multi_index, dst_multi_index, self.shape))
 
         if first_axis == 0:
@@ -421,8 +419,68 @@ class LoopoverPuzzle(Puzzle):
         return str_
 
 
+class LinearPuzzle(_Puzzle):
+    """Simplified, 1-dimensional alternative of LoopoverPuzzles.  Works directly with Rots instead of Moves.  Very
+    similar behavior apart from that.
+    """
+    def __init__(self, board, *, ids=None):
+        super().__init__(board, ids=ids)
+
+    @classmethod
+    def from_shape(cls, shape, *, randomize=False):
+        if len(shape) != 1:
+            raise PuzzleDimError
+        return super().from_shape(shape, randomize=randomize)
+
+    @classmethod
+    def from_rotcomp(cls, rotcomp):
+        return cls.from_shape(((rotcomp.max_index + 1), ))
+
+    def randomize_perm(self):
+        rotcomp = RotComp.from_random(
+            n_rots=self.n_pieces,
+            max_index=self.n_pieces,
+            max_len=self.n_pieces,
+            )
+
+        self.rot(rotcomp)
+
+    def get_solution(self):
+        solution = self.get_rotcomp_solution()
+        return solution
+
+    def apply_solution(self, solution):
+        self.rot(solution)
+
+    def rot(self, rotcomp):
+        self._rot_directly(rotcomp)
+
+    def _get_pretty_repr(self, *, use_ids=False):
+        board_to_repr = self.board if not use_ids else self._ids
+        if HAS_TABULATE:
+            str_ = tabulate([board_to_repr], tablefmt="fancy_grid")
+        else:
+            str_ = " ".join(f"{piece:>3}" for piece in board_to_repr.flat)
+        return str_
+
+
 class RotComp(list):
+    """Represents a sequence (or composition) of Rot objects.  Behaves like a list, with additional methods to
+    manipulate it while maintaining its value.
+    """
+
     def __init__(self, rots=None, *, ids=None, max_index=0):
+        """
+        Create the object representing the composition of these Rots.
+
+        Args:
+            rots: (Optional) Rot or sequence of Rots. Interpreted as an empty sequence if not passed.
+            ids: (optional, keyword-only) Unique identifiers for those Rots.
+            max_index: (optional, keyword-only) Maximum index expected to be found inside the Rots of this sequence.
+
+        Raises:
+            RotCompError: if rots cannot be parsed as a Rot nor a sequence of Rots.
+        """
         if not rots:
             super().__init__([])
         else:
@@ -945,7 +1003,194 @@ class RotComp(list):
         return super(type(self), self.compressed).__eq__(other.compressed)
 
 
+class MoveComp(list):
+    """Represents a sequence (or composition) of Move objects.  Behaves like a list, with additional methods to
+    manipulate it while maintaining its value.
+    """
+
+    def __init__(self, moves=None):
+        """
+        Create the object representing the composition of these moves.
+
+        Args:
+            moves: (optional) Move or sequence of Moves. Interpreted as an empty sequence if not passed.
+
+        Raises:
+            MoveCompError: if moves cannot be parsed as a Move nor a sequence of Moves.
+        """
+
+        if moves is None:
+            super().__init__([])
+            return
+
+        try:
+            first_move = moves[0]
+        except IndexError:
+            pass
+
+        except TypeError:
+            raise MoveCompError
+
+        else:
+            try:
+                iter(first_move)
+            except TypeError:
+                moves = [moves]
+
+        super().__init__([Move(*move) for move in moves])
+
+    @classmethod
+    def from_strs(cls, move_strs):
+        return cls([Move.from_str(move_str) for move_str in move_strs])
+
+    @property
+    def distance(self):
+        return sum(abs(move.shift) for move in self)
+
+    @property
+    def as_strs(self):
+        return [move_str for move in self for move_str in move.as_strs]
+
+    @property
+    def compressed(self):
+        new_movecomp = type(self)(self)
+        while True:
+            iter_n_fused = 0
+            current_axis = -1
+            iter_movecomp = type(new_movecomp)()
+            movecomps_per_axis = []
+            for move in new_movecomp:
+                if move.axis != current_axis:
+                    current_axis = move.axis
+                    movecomps_per_axis.append(type(new_movecomp)())
+
+                movecomps_per_axis[-1].append(move)
+
+            for axis_movecomp in movecomps_per_axis:
+                axis_movecomp.sort(key=lambda m: m.index_)
+                current_index = -1
+                movecomps_per_index = []
+                for move in axis_movecomp:
+                    if move.index_ != current_index:
+                        current_index = move.index_
+                        movecomps_per_index.append(type(new_movecomp)())
+
+                    movecomps_per_index[-1].append(move)
+
+                for index_movecomp in movecomps_per_index:
+                    iter_n_fused += index_movecomp.fuse()
+                    iter_movecomp += index_movecomp
+
+            new_movecomp = iter_movecomp
+
+            if iter_n_fused == 0:
+                break
+
+        return new_movecomp
+
+    def compress(self):
+        self[:] = self.compressed
+
+    def fuse(self, dst_order=None, *src_orders):
+        orders = [dst_order] + list(src_orders)
+        if src_orders and not (sorted(orders) == list(range(dst_order, src_orders[-1] + 1)) == orders):
+            raise MoveCompFuseError
+
+        do_raise = True
+        if dst_order is None:
+            dst_order = 0
+            do_raise = False
+        if not src_orders:
+            src_orders = [dst_order + 1]
+            do_raise = False
+
+        dst_move: Move
+        src_move: Move
+
+        try:
+            dst_move = self[dst_order]
+        except IndexError as e:
+            if do_raise:
+                raise e
+
+            return 0
+
+        n_fused = 0
+        for src_order in src_orders:
+            src_order -= n_fused
+            try:
+                src_move = self[src_order]
+            except IndexError as e:
+                if do_raise:
+                    raise e
+
+                break
+
+            try:
+                fused_move = dst_move + src_move
+            except TypeError as e:
+                if do_raise:
+                    raise e
+
+                break
+
+            self[dst_order] = fused_move
+            del self[src_order]
+
+            n_fused += 1
+
+        if self[dst_order] == 0:
+            del self[dst_order]
+            n_fused += 1
+
+        return n_fused
+
+    def append(self, move):
+        super().append(Move(*move))
+
+    def insert(self, order, move):
+        super().insert(order, Move(*move))
+
+    def __str__(self):
+        return self.__repr__()
+
+    def __repr__(self):
+        return f"{type(self).__name__}([{', '.join(repr(tuple(move)) for move in self)}])"
+
+    def __neg__(self):
+        return type(self)([-move for move in reversed(self)])
+
+    def __add__(self, other):
+        other = type(self)(other)
+
+        return type(self)(super().__add__(other))
+
+    def __iadd__(self, other):
+        other = type(self)(other)
+
+        super().__iadd__(other)
+        return self
+
+    def __sub__(self, other):
+        return self + -other
+
+    def __isub__(self, other):
+        return self.__iadd__(-other)
+
+    def __eq__(self, other):
+        other = type(self)(other)
+
+        return super(type(self), self.compressed).__eq__(other.compressed)
+
+
 class Rot(list):
+    """Represents a rotation, which is a generalization of the concept of swapping two entities, for arbitrary
+    amounts. They are mainly used inside RotComp objects, and encode a transformation of _Puzzle objects.  They are
+    composed of indices in a sequence, and conceptually on application of that transformation, the entity identified
+    by each index will be swapped for the one identified by the preceding index in sequence, while the first one is
+    swapped for the last.
+    """
+
     def __init__(self, indices=None):
         if indices is None:
             super().__init__([])
@@ -1036,173 +1281,11 @@ class Rot(list):
         return super_rtn
 
 
-class MoveComp(list):
-    def __init__(self, moves=None):
-        if moves is None:
-            super().__init__([])
-            return
-
-        try:
-            first_move = moves[0]
-        except IndexError:
-            pass
-
-        except TypeError:
-            raise MoveCompError
-
-        else:
-            try:
-                iter(first_move)
-            except TypeError:
-                moves = [moves]
-
-        super().__init__([Move(*move) for move in moves])
-
-    @classmethod
-    def from_strs(cls, move_strs):
-        return cls([Move.from_str(move_str) for move_str in move_strs])
-
-    @property
-    def distance(self):
-        return sum(abs(move.shift) for move in self)
-
-    @property
-    def as_strs(self):
-        return [move_str for move in self for move_str in move.as_strs]
-
-    @property
-    def compressed(self):
-        new_movecomp = type(self)(self)
-        while True:
-            iter_n_fused = 0
-            current_axis = -1
-            iter_movecomp = type(new_movecomp)()
-            movecomps_per_axis = []
-            for move in new_movecomp:
-                if move.axis != current_axis:
-                    current_axis = move.axis
-                    movecomps_per_axis.append(type(new_movecomp)())
-
-                movecomps_per_axis[-1].append(move)
-
-            for axis_movecomp in movecomps_per_axis:
-                axis_movecomp.sort(key=lambda m: m.index_)
-                current_index = -1
-                movecomps_per_index = []
-                for move in axis_movecomp:
-                    if move.index_ != current_index:
-                        current_index = move.index_
-                        movecomps_per_index.append(type(new_movecomp)())
-
-                    movecomps_per_index[-1].append(move)
-
-                for index_movecomp in movecomps_per_index:
-                    iter_n_fused += index_movecomp.fuse()
-                    iter_movecomp += index_movecomp
-
-            new_movecomp = iter_movecomp
-
-            if iter_n_fused == 0:
-                break
-
-        return new_movecomp
-
-    def compress(self):
-        self[:] = self.compressed
-
-    def fuse(self, dst_order=None, *src_orders):
-        orders = [dst_order] + list(src_orders)
-        if src_orders and not(sorted(orders) == list(range(dst_order, src_orders[-1] + 1)) == orders):
-            raise MoveCompFuseError
-
-        do_raise = True
-        if dst_order is None:
-            dst_order = 0
-            do_raise = False
-        if not src_orders:
-            src_orders = [dst_order + 1]
-            do_raise = False
-
-        dst_move: Move
-        src_move: Move
-
-        try:
-            dst_move = self[dst_order]
-        except IndexError as e:
-            if do_raise:
-                raise e
-
-            return 0
-
-        n_fused = 0
-        for src_order in src_orders:
-            src_order -= n_fused
-            try:
-                src_move = self[src_order]
-            except IndexError as e:
-                if do_raise:
-                    raise e
-
-                break
-
-            try:
-                fused_move = dst_move + src_move
-            except TypeError as e:
-                if do_raise:
-                    raise e
-
-                break
-
-            self[dst_order] = fused_move
-            del self[src_order]
-
-            n_fused += 1
-
-        if self[dst_order] == 0:
-            del self[dst_order]
-            n_fused += 1
-
-        return n_fused
-
-    def append(self, move):
-        super().append(Move(*move))
-
-    def insert(self, order, move):
-        super().insert(order, Move(*move))
-
-    def __str__(self):
-        return self.__repr__()
-
-    def __repr__(self):
-        return f"{type(self).__name__}([{', '.join(repr(tuple(move)) for move in self)}])"
-
-    def __neg__(self):
-        return type(self)([-move for move in reversed(self)])
-
-    def __add__(self, other):
-        other = type(self)(other)
-
-        return type(self)(super().__add__(other))
-
-    def __iadd__(self, other):
-        other = type(self)(other)
-
-        super().__iadd__(other)
-        return self
-
-    def __sub__(self, other):
-        return self + -other
-
-    def __isub__(self, other):
-        return self.__iadd__(-other)
-
-    def __eq__(self, other):
-        other = type(self)(other)
-
-        return super(type(self), self.compressed).__eq__(other.compressed)
-
-
 class Move(tuple):
+    """Represents the sliding of a row or column on a 2D grid of entities.  Mainly used inside MoveComp objects.  Used
+    to encode the moves on LoopoverPuzzle objects.  They are composed of 3 things: an axis, an index and a shift.
+    """
+
     def __new__(cls, axis: int, index_: int, shift: int):
         if axis != 0 and axis != 1:
             raise MoveError("axis must be 0 or 1.")
@@ -1210,6 +1293,17 @@ class Move(tuple):
         return super().__new__(cls, (axis, index_, shift))
 
     def __init__(self,  axis: int, index_: int, shift: int):
+        """
+        Create a Move object.
+
+        Args:
+            axis: Can be 0, for column (vertical), or 1, for row (horizontal).
+            index_: Corresponds to the index of the row or column to be transformed.
+            shift: The number of cells to slide the row or column by.
+
+        Raises:
+            MoveError: If axis is not 0 and not 1.
+        """
         super().__init__()
 
     @classmethod
@@ -1375,7 +1469,7 @@ class MoveError(Exception):
     pass
 
 
-def modular_mean(values, mod):
+def _modular_mean(values, mod):
     """Return the modular mean, or 0 if it is centered. """
     if len(values) == 0:
         raise ValueError
@@ -1392,7 +1486,7 @@ def modular_mean(values, mod):
     return mean_value
 
 
-def modular_median(values, mod):
+def _modular_median(values, mod):
     """Return the modular median. """
     if len(values) == 0:
         raise ValueError
@@ -1401,14 +1495,15 @@ def modular_median(values, mod):
     for pot_median in values:
         tot_shift = 0
         for value in values:
-            tot_shift += abs(smallest_shift(value - pot_median, mod))
+            tot_shift += abs(_smallest_shift(value - pot_median, mod))
 
         pot_medians_shifts.append((pot_median, tot_shift))
 
     return min(pot_medians_shifts, key=lambda x: x[1])[0]
 
 
-def smallest_shift(shift, mod):
+def _smallest_shift(shift, mod):
+    """Return the equivalent shift with the smallest absolute value. """
     return (shift + (mod // 2)) % mod - mod // 2
 
 
