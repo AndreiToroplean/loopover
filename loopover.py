@@ -117,7 +117,7 @@ class _Puzzle(ABC):
         These actions can either be Move or Rot objects depending on what the type of puzzle considers legal.
 
         Returns:
-            The solution to the _Puzzle.
+            solution: The solution to the _Puzzle.
         """
         pass
 
@@ -139,7 +139,7 @@ class _Puzzle(ABC):
         For LinearPuzzles, a RotComp is a legal transformation that can be applied directly.
 
         Returns:
-            A RotComp taking self to its solved permutation.
+            rotcomp: A RotComp taking self to its solved permutation.
         """
         rotcomp = RotComp()
         visited_indices = []
@@ -186,7 +186,7 @@ class _Puzzle(ABC):
         print(self._get_pretty_repr(use_ids=True))
 
     def is_perm_of(self, other):
-        """Check if self and other are permutations of the same board (i. e. they contain the same pieces).
+        """Check if self and other are permutations of the same board (ie they contain the same pieces).
 
         Args:
             other: _Puzzle object to compare self to.
@@ -269,7 +269,7 @@ class _Puzzle(ABC):
             board is.
 
         Returns:
-            A str that is intended as a drawing of the requested board.
+            pretty_repr: A string that is intended as a drawing of the requested board.
         """
         pass
 
@@ -280,7 +280,7 @@ class _Puzzle(ABC):
             id_: Piece id.
 
         Returns:
-            A multi_index letting you index inside the internal representations of the board and ids.
+            multi_index: A multi_index letting you index inside the internal representations of the board and ids.
         """
         return tuple(int(axis_index) for axis_index in np.where(self._ids == id_))
 
@@ -301,7 +301,7 @@ class _Puzzle(ABC):
             shape: The shape requested for the returned array.
 
         Returns:
-            An array with numbers counting from 0.
+            range_array: An array with numbers counting from 0.
         """
         if shape is None:
             shape = self.shape
@@ -361,32 +361,51 @@ class LoopoverPuzzle(_Puzzle):
         self.move(action)
 
     def rot(self, rotcomp):
+        """Apply a RotComp or alike transformation to self.
+
+        Args:
+            rotcomp: A RotComp or RotComp like sequence of tris (ie Rots of len 3), exclusively.
+            
+        Raises:
+            LoopoverPuzzleRotError: if one of the Rots in rotcomp is not a tri.
+        """
         rotcomp = RotComp(rotcomp)
 
         for rot in rotcomp:
-            self._apply_tri_rot(rot)
+            if len(rot) != 3:
+                raise LoopoverPuzzleRotError
 
-    def _apply_tri_rot(self, rot):
-        if len(rot) != 3:
-            raise LoopoverPuzzleRotError
+            # Setup:
+            setup_movecomp, main_id, id_a, id_b = self._get_setup_movecomp(rot)
+            self.move(setup_movecomp)
 
-        setup_movecomp, main_id, id_a, id_b = self._get_setup_movecomp(rot)
+            # Operation:
+            op_a = self._get_shortest_path(id_a, main_id)
+            op_b = self._get_shortest_path(id_b, main_id)
+            rot.roll_to(main_id, to_front=False)
+            if rot[1] == id_b:
+                op_movecomp = op_a + op_b - op_a - op_b
+            else:
+                op_movecomp = op_b + op_a - op_b - op_a
+            self.move(op_movecomp)
 
-        self.move(setup_movecomp)
-
-        op_a = self._get_shortest_path(id_a, main_id)
-        op_b = self._get_shortest_path(id_b, main_id)
-        rot.roll_to(main_id, to_front=False)
-        if rot[1] == id_b:
-            op_movecomp = op_a + op_b - op_a - op_b
-        else:
-            op_movecomp = op_b + op_a - op_b - op_a
-
-        self.move(op_movecomp)
-
-        self.move(-setup_movecomp)
+            # Reversing setup:
+            self.move(-setup_movecomp)
 
     def _get_setup_movecomp(self, rot):
+        """Return the MoveComp needed to setup the board in order to be able to apply the operation to perform the rot.
+        
+        Non-public method.
+                
+        Args:
+            rot: Rot to setup for. Needs to be a tri.
+
+        Returns:
+            setup_movecomp: MoveComp needed for setup.
+            main_id: Id of the main piece in the rot.
+            id_a: Id of piece A.
+            id_b: Id of piece B.
+        """
         setup_movecomp = MoveComp()
 
         center_id = self._get_center_id(rot)
@@ -448,8 +467,19 @@ class LoopoverPuzzle(_Puzzle):
 
         return setup_movecomp, main_id, id_a, id_b
 
-    def _get_center_id(self, rot):
-        multi_indices = zip(*(self._get_multi_index_from_id(id_) for id_ in rot))
+    def _get_center_id(self, ids):
+        """Return an id such that the cumulative distance from it to the given ids is minimized. Non-public method.
+
+        Args:
+            ids: The ids to find the center for.
+
+        Returns:
+            center_id: The center for these ids.
+
+        Raises:
+            ValueError: if ids is an empty sequence.
+        """
+        multi_indices = zip(*(self._get_multi_index_from_id(id_) for id_ in ids))
 
         mean_multi_index = []
         for axis_len, axis_indices in zip(self.shape, multi_indices):
@@ -458,6 +488,16 @@ class LoopoverPuzzle(_Puzzle):
         return self._ids[tuple(mean_multi_index)]
 
     def _get_shortest_path(self, src_id, dst_id, *, first_axis=0):
+        """Return the MoveComp with the smallest distance that will take src_id to dst_id. Non-public method.
+
+        Args:
+            src_id
+            dst_id
+            first_axis: (optional) The first axis the src_id should move along. By default, 0.
+
+        Returns:
+            movecomp: The MoveComp representing that shortest path.
+        """
         src_multi_index = self._get_multi_index_from_id(src_id)
         dst_multi_index = self._get_multi_index_from_id(dst_id)
         multi_shift = tuple(_smallest_shift(dst_axis_index - src_axis_index, axis_len)
@@ -479,6 +519,15 @@ class LoopoverPuzzle(_Puzzle):
         return movecomp
 
     def _get_shifted_id(self, id_, multi_shift):
+        """Return the id located at id_ + multi_shift. Non-public method.
+
+        Args:
+            id_
+            multi_shift
+
+        Returns:
+            shifted_id: Id located at id_ + multi_shift.
+        """
         multi_index = self._get_multi_index_from_id(id_)
         shifted_multi_index = tuple((axis_index + axis_shift) % axis_len
             for axis_index, axis_shift, axis_len in zip(multi_index, multi_shift, self.shape))
@@ -486,6 +535,14 @@ class LoopoverPuzzle(_Puzzle):
         return self._ids[shifted_multi_index]
 
     def move_from_strs(self, move_strs):
+        """Apply the MoveComp described by move_strs.
+
+        Args:
+            move_strs: Sequence of Moves described in strs.
+
+        Raises:
+            MoveError: if a str doesn't follow move_str grammar.
+        """
         self.move(MoveComp.from_strs(move_strs))
 
     def move(self, movecomp):
@@ -514,10 +571,10 @@ class LoopoverPuzzle(_Puzzle):
     def _get_pretty_repr(self, *, use_ids=False):
         board_to_repr = self._board if not use_ids else self._ids
         if HAS_TABULATE:
-            str_ = tabulate(board_to_repr, tablefmt="fancy_grid")
+            pretty_repr = tabulate(board_to_repr, tablefmt="fancy_grid")
         else:
-            str_ = "\n".join((" ".join(f"{piece:>3}" for piece in row)) for row in board_to_repr)
-        return str_
+            pretty_repr = "\n".join((" ".join(f"{piece:>3}" for piece in row)) for row in board_to_repr)
+        return pretty_repr
 
 
 class LinearPuzzle(_Puzzle):
@@ -559,10 +616,10 @@ class LinearPuzzle(_Puzzle):
     def _get_pretty_repr(self, *, use_ids=False):
         board_to_repr = self._board if not use_ids else self._ids
         if HAS_TABULATE:
-            str_ = tabulate([board_to_repr], tablefmt="fancy_grid")
+            pretty_repr = tabulate([board_to_repr], tablefmt="fancy_grid")
         else:
-            str_ = " ".join(f"{piece:>3}" for piece in board_to_repr.flat)
-        return str_
+            pretty_repr = " ".join(f"{piece:>3}" for piece in board_to_repr.flat)
+        return pretty_repr
 
 
 class RotComp(list):
@@ -1298,7 +1355,7 @@ class Rot(list):
             passed.
 
         Raises:
-            RotError: If there's an index that is repeated inside of indices.
+            RotError: ff there's an index that is repeated inside of indices.
         """
         if indices is None:
             super().__init__([])
@@ -1409,7 +1466,7 @@ class Move(tuple):
             shift: The number of cells to slide the row or column by.
 
         Raises:
-            MoveError: If axis is not 0 and not 1.
+            MoveError: if axis is not 0 and not 1.
         """
         super().__init__()
 

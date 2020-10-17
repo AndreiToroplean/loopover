@@ -14,7 +14,7 @@ class TestLoopoverPuzzle:
         loopover_puzzle_b = loopover_puzzle_a.copy()
         tri_rot = Rot.from_random(max_index=loopover_puzzle_a.n_pieces, len_=3)
         loopover_puzzle_a._rot_directly(tri_rot)
-        loopover_puzzle_b._apply_tri_rot(tri_rot)
+        loopover_puzzle_b.rot(tri_rot)
         assert loopover_puzzle_a.has_equal_board(loopover_puzzle_b)
 
 
