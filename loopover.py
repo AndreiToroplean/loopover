@@ -1494,6 +1494,14 @@ class Move(tuple):
         super().__init__()
 
     @classmethod
+    def from_random(cls, board_shape):
+        axis = random.randint(0, 1)
+        index_ = random.randint(0, board_shape[axis ^ 1] - 1)
+        shift = random.randint(1, board_shape[axis] - 1)
+
+        return cls(axis, index_, shift)
+
+    @classmethod
     def from_str(cls, move_str):
         try:
             letter, index_ = tuple(move_str)
@@ -1509,14 +1517,6 @@ class Move(tuple):
             index_ = int(index_)
         except ValueError:
             raise MoveError("Invalid index, must be int.")
-
-        return cls(axis, index_, shift)
-
-    @classmethod
-    def from_random(cls, board_shape):
-        axis = random.randint(0, 1)
-        index_ = random.randint(0, board_shape[axis ^ 1] - 1)
-        shift = random.randint(1, board_shape[axis] - 1)
 
         return cls(axis, index_, shift)
 
@@ -1545,8 +1545,16 @@ class Move(tuple):
     def shift(self):
         return self[2]
 
-    def __repr__(self):
-        return f"Move(axis={self.axis}, index_={self.index_}, shift={self.shift})"
+    def __eq__(self, other):
+        if other == 0:
+            if self.shift == 0:
+                return True
+
+            return False
+        elif isinstance(other, int):
+            raise NotImplementedError
+
+        return super().__eq__(other)
 
     def __neg__(self):
         return type(self)(self.axis, self.index_, -self.shift)
@@ -1562,16 +1570,8 @@ class Move(tuple):
     def __iadd__(self, other):
         return other + self
 
-    def __eq__(self, other):
-        if other == 0:
-            if self.shift == 0:
-                return True
-
-            return False
-        elif isinstance(other, int):
-            raise NotImplementedError
-
-        return super().__eq__(other)
+    def __repr__(self):
+        return f"Move(axis={self.axis}, index_={self.index_}, shift={self.shift})"
 
     _letter_to_axis_shift = {
         "R": (1, 1),
