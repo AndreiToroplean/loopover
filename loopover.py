@@ -50,7 +50,7 @@ class _Puzzle(ABC):
     """Abstract, non-public parent class of LoopoverPuzzle and LinearPuzzle. """
 
     def __init__(self, board, *, ids=None):
-        """Construct a _Puzzle object representing its board with its solved permutation.
+        """Construct a _Puzzle object representing its board and its solved permutation.
 
         Args:
             board: Array-like object describing the pieces in their starting permutation of the puzzle board.
@@ -608,7 +608,26 @@ class LinearPuzzle(_Puzzle):
 
     @classmethod
     def from_rotcomp(cls, rotcomp):
+        """Alternate constructor for LinearPuzzle that creates one that the specified RotComp might apply to.
+
+        The LinearPuzzle thus created will have pieces counting from 0 to the max_index in rotcomp.
+
+        Args:
+            rotcomp: a RotComp from which the LinearPuzzle will be created.
+        """
         return cls.from_shape(((rotcomp.max_index + 1), ))
+
+    def get_solution(self):
+        solution = self.get_rotcomp_solution()
+        return solution
+
+    def apply_action(self, action):
+        """Apply the given action to self.
+
+        Args:
+            action: RotComp or alike to apply to self.
+        """
+        self.rot(action)
 
     def randomize_perm(self):
         rotcomp = RotComp.from_random(
@@ -618,13 +637,6 @@ class LinearPuzzle(_Puzzle):
             )
 
         self.apply_action(rotcomp)
-
-    def get_solution(self):
-        solution = self.get_rotcomp_solution()
-        return solution
-
-    def apply_action(self, action):
-        self.rot(action)
 
     def rot(self, rotcomp):
         self._rot_directly(rotcomp)
