@@ -114,7 +114,7 @@ class _Puzzle(ABC):
     def get_solution(self):
         """Return a sequence of legal actions taking self from its current permutation to the solved one.
 
-        These actions can either be Move or Rot objects depending on what the type of _Puzzle considers legal.
+        These actions can either be Move or Rot objects depending on what the type of puzzle considers legal.
 
         Returns:
             The solution to the _Puzzle.
@@ -122,13 +122,13 @@ class _Puzzle(ABC):
         pass
 
     @abstractmethod
-    def apply_solution(self, solution):
-        """Apply the given solution through the legal action of the _Puzzle.
+    def apply_legal_action(self, action):
+        """Apply the given action to self.
 
-        This can be either moving or rotating depending on the type of _Puzzle.
+        This either can be moving or rotating depending on the type of puzzle.
 
         Args:
-            solution: Sequence of actions, usually a MoveComp or a RotComp, to apply to self.
+            action: Sequence of actions, usually a MoveComp or a RotComp, to apply to self.
         """
         pass
 
@@ -161,50 +161,75 @@ class _Puzzle(ABC):
 
     @abstractmethod
     def randomize_perm(self):
+        """Generate and apply a random legal action to self. """
         pass
 
     @abstractmethod
     def rot(self, rotcomp):
+        """Apply a RotComp or alike transformation to self.
+
+        Args:
+            rotcomp: A RotComp or RotComp like sequence.
+        """
         pass
 
     def copy(self):
+        """Return a deep copy of self. """
         return type(self)(self)
 
     def draw(self):
+        """Draw the board. """
         print(self._get_pretty_repr())
 
     def draw_ids(self):
+        """Draw the piece ids in the form of a board, representing the expected order to solve the _Puzzle. """
         print(self._get_pretty_repr(use_ids=True))
 
     def is_perm_of(self, other):
+        """Check if self and other are permutations of the same board (i. e. they contain the same pieces).
+
+        Args:
+            other: _Puzzle object to compare self to.
+
+        Raises:
+            TypeError: it other is not a _Puzzle.
+        """
+        if not isinstance(other, _Puzzle):
+            raise TypeError("other has to be a Puzzle.")
+
         if self._board.shape != other._board.shape:
             return False
 
         return np.array_equal(np.sort(self._board, axis=None), np.sort(other._board, axis=None))
 
     def has_equal_board(self, other):
+        """Check if self and other are the same permutation of the same board.
+
+        Args:
+            other: _Puzzle object to compare self to.
+
+        Raises:
+            TypeError: it other is not a _Puzzle.
+        """
         if not isinstance(other, _Puzzle):
             raise TypeError("other has to be a Puzzle.")
 
         return np.array_equal(self._board, other._board)
 
-    def has_equal_ids(self, other):
-        if not isinstance(other, _Puzzle):
-            raise TypeError("other has to be a Puzzle.")
-
-        return np.array_equal(self._ids, other._ids)
-
     @property
     def is_solved(self):
+        """Property that is True if self is in the conceptually solved permutation, False otherwise. """
         ids_ravelled = self._ids.ravel()
         return np.array_equal(ids_ravelled, np.sort(ids_ravelled))
 
     @property
     def shape(self):
+        """Tuple describing the dimensions of self's board. """
         return self._board.shape
 
     @property
     def n_pieces(self):
+        """Number of pieces in the board. """
         return prod(self.shape)
 
     def __str__(self):
@@ -215,6 +240,13 @@ class _Puzzle(ABC):
         return f"{type(self).__name__}({self._board.tolist()}{str_meta})"
 
     def _rot_directly(self, rotcomp):
+        """Directly apply a RotComp to self.
+
+        Non-public method. This might not be a legal action depending on the type of puzzle.
+
+        Args:
+            rotcomp: RotComp or alike transformation.
+        """
         rotcomp = RotComp(rotcomp)
 
         ted_perm = self.copy()
@@ -230,18 +262,47 @@ class _Puzzle(ABC):
 
     @abstractmethod
     def _get_pretty_repr(self, *, use_ids=False):
+        """Return a nice representation of the requested board. Non-public method.
+
+        Args:
+            use_ids: (optional) If True, a representation of the ids is requested, otherwise and by default, one of the
+            board is.
+
+        Returns:
+            A str that is intended as a drawing of the requested board.
+        """
         pass
 
     def _get_multi_index_from_id(self, id_):
+        """Return the multi_index corresponding to the identified piece. Non-public method.
+
+        Args:
+            id_: Piece id.
+
+        Returns:
+            A multi_index letting you index inside the internal representations of the board and ids.
+        """
         return tuple(int(axis_index) for axis_index in np.where(self._ids == id_))
 
-    def _unravel_index(self, indices):
-        return np.unravel_index(indices, self.shape)
+    def _unravel_index(self, index):
+        """Return the multi_index corresponding to this flat index. Non-public method. """
+        return np.unravel_index(index, self.shape)
 
-    def _ravel_multi_index(self, multi_indices):
-        return np.ravel_multi_index(multi_indices, self.shape)
+    def _ravel_multi_index(self, multi_index):
+        """Return the flat index corresponding to this multi_index. Non-public method. """
+        return np.ravel_multi_index(multi_index, self.shape)
 
     def _get_range_array(self=None, *, shape=None) -> np.ndarray:
+        """Return an array with numbers counting from 0. Non-public method.
+
+        Args:
+            self: (optional) If not passed, i.e. the method is called on the class, shape needs to be passed. Otherwise,
+            self's shape is used.
+            shape: The shape requested for the returned array.
+
+        Returns:
+            An array with numbers counting from 0.
+        """
         if shape is None:
             shape = self.shape
 
@@ -296,8 +357,8 @@ class LoopoverPuzzle(_Puzzle):
 
         return solution
 
-    def apply_solution(self, solution):
-        self.move(solution)
+    def apply_legal_action(self, action):
+        self.move(action)
 
     def rot(self, rotcomp):
         rotcomp = RotComp(rotcomp)
@@ -483,14 +544,14 @@ class LinearPuzzle(_Puzzle):
             max_len=self.n_pieces,
             )
 
-        self.apply_solution(rotcomp)
+        self.apply_legal_action(rotcomp)
 
     def get_solution(self):
         solution = self.get_rotcomp_solution()
         return solution
 
-    def apply_solution(self, solution):
-        self.rot(solution)
+    def apply_legal_action(self, action):
+        self.rot(action)
 
     def rot(self, rotcomp):
         self._rot_directly(rotcomp)
