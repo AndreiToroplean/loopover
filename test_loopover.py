@@ -24,8 +24,8 @@ class TestRotComp:
         rotcomp = RotComp.from_random(4, max_index=16)
         linear_puzzle_a = LinearPuzzle.from_rotcomp(rotcomp)
         linear_puzzle_b = linear_puzzle_a.copy()
-        linear_puzzle_a.rot(rotcomp)
-        linear_puzzle_b.rot(rotcomp.compressed)
+        linear_puzzle_a.apply_solution(rotcomp)
+        linear_puzzle_b.apply_solution(rotcomp.compressed)
         assert linear_puzzle_a.has_equal_board(linear_puzzle_b)
 
 

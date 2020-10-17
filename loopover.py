@@ -50,7 +50,7 @@ class _Puzzle(ABC):
     """Abstract, non-public parent class of LoopoverPuzzle and LinearPuzzle. """
 
     def __init__(self, board, *, ids=None):
-        """Construct a _Puzzle object with its _board and _ids attributes.
+        """Construct a _Puzzle object representing its board with its solved permutation.
 
         Args:
             board: Array-like object describing the pieces in their starting permutation of the puzzle board.
@@ -93,6 +93,14 @@ class _Puzzle(ABC):
         return loopover_puzzle
 
     def define_solved_perm(self, solved_board):
+        """Define the permutation in which the board is considered solved, as apparent through its is_solved attribute.
+
+        Args:
+            solved_board: A _Puzzle or array-like object representing the solved permutation of self.
+
+        Raises:
+            PuzzlePermError: if the given solved_board is not a permutation of self.
+        """
         solved_puzzle = type(self)(solved_board)
         if not self.is_perm_of(solved_puzzle):
             raise PuzzlePermError
@@ -104,11 +112,52 @@ class _Puzzle(ABC):
 
     @abstractmethod
     def get_solution(self):
+        """Return a sequence of legal actions taking self from its current permutation to the solved one.
+
+        These actions can either be Move or Rot objects depending on what the type of _Puzzle considers legal.
+
+        Returns:
+            The solution to the _Puzzle.
+        """
         pass
 
     @abstractmethod
     def apply_solution(self, solution):
+        """Apply the given solution through the legal action of the _Puzzle.
+
+        This can be either moving or rotating depending on the type of _Puzzle.
+
+        Args:
+            solution: Sequence of actions, usually a MoveComp or a RotComp, to apply to self.
+        """
         pass
+
+    def get_rotcomp_solution(self):
+        """Return the more or less abstract solution to the _Puzzle, in the form of a RotComp.
+
+        For LoopoverPuzzles, a RotComp is a higher-level transformation that is then implemented in terms of a MoveComp.
+        For LinearPuzzles, a RotComp is a legal transformation that can be applied directly.
+
+        Returns:
+            A RotComp taking self to its solved permutation.
+        """
+        rotcomp = RotComp()
+        visited_indices = []
+
+        for id_ in self._ids.ravel():
+            if id_ in visited_indices:
+                continue
+
+            rotcomp.append(Rot())
+            while id_ not in visited_indices:
+                visited_indices.append(id_)
+                rotcomp[-1].append(id_)
+                id_ = self._ids[self._unravel_index(id_)]
+
+            if len(rotcomp[-1]) < 2:
+                del rotcomp[-1]
+
+        return rotcomp
 
     @abstractmethod
     def randomize_perm(self):
@@ -164,25 +213,6 @@ class _Puzzle(ABC):
     def __repr__(self, *, with_meta=True):
         str_meta = f", ids={self._ids.tolist()}" if with_meta else ""
         return f"{type(self).__name__}({self._board.tolist()}{str_meta})"
-
-    def _get_rotcomp_solution(self):
-        rotcomp = RotComp()
-        visited_indices = []
-
-        for id_ in self._ids.ravel():
-            if id_ in visited_indices:
-                continue
-
-            rotcomp.append(Rot())
-            while id_ not in visited_indices:
-                visited_indices.append(id_)
-                rotcomp[-1].append(id_)
-                id_ = self._ids[self._unravel_index(id_)]
-
-            if len(rotcomp[-1]) < 2:
-                del rotcomp[-1]
-
-        return rotcomp
 
     def _rot_directly(self, rotcomp):
         rotcomp = RotComp(rotcomp)
@@ -245,7 +275,7 @@ class LoopoverPuzzle(_Puzzle):
         working_perm = self.copy()
 
         while True:
-            rotcomp = working_perm._get_rotcomp_solution()
+            rotcomp = working_perm.get_rotcomp_solution()
             try:
                 rotcomp.to_tris(be_strict=True)
             except RotCompSubdivideError:
@@ -453,10 +483,10 @@ class LinearPuzzle(_Puzzle):
             max_len=self.n_pieces,
             )
 
-        self.rot(rotcomp)
+        self.apply_solution(rotcomp)
 
     def get_solution(self):
-        solution = self._get_rotcomp_solution()
+        solution = self.get_rotcomp_solution()
         return solution
 
     def apply_solution(self, solution):
@@ -635,7 +665,7 @@ class RotComp(list):
         dst_perm = LinearPuzzle(src_perm)
         dst_perm.rot(self)
         src_perm.define_solved_perm(dst_perm)
-        return src_perm._get_rotcomp_solution()
+        return src_perm.get_rotcomp_solution()
 
     def _compress_old(self):
         """Not finished implementation. """
