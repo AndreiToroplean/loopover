@@ -376,10 +376,10 @@ class LoopoverPuzzle(_Puzzle):
         """
         rotcomp = RotComp(rotcomp)
 
-        for rot in rotcomp:
-            if len(rot) != 3:
-                raise LoopoverPuzzleRotError
+        if rotcomp.count_by_len(3) != len(rotcomp):
+            raise LoopoverPuzzleRotError
 
+        for rot in rotcomp:
             # Setup:
             setup_movecomp, main_id, id_a, id_b = self._get_setup_movecomp(rot)
             self.move(setup_movecomp)
