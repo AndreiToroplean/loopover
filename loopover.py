@@ -50,22 +50,22 @@ class _Puzzle(ABC):
     """Abstract, non-public parent class of LoopoverPuzzle and LinearPuzzle. """
 
     def __init__(self, board, *, ids=None):
-        """Construct a _Puzzle object with its board and _ids attributes.
+        """Construct a _Puzzle object with its _board and _ids attributes.
 
         Args:
             board: Array-like object describing the pieces in their starting permutation of the puzzle board.
             ids: (optional, keyword-only) Array-like object used to uniquely identify the pieces of the board, also
             representing their order in the solved permutation.
         """
-        self.board: np.ndarray
+        self._board: np.ndarray
         self._ids: np.ndarray
 
         if isinstance(board, _Puzzle):
-            self.board = board.board.copy()
+            self._board = board._board.copy()
             self._ids = board._ids.copy()
             return
 
-        self.board = np.array(board, dtype=str)
+        self._board = np.array(board, dtype=str)
         self._ids = self._get_range_array()
 
         if ids is not None:
@@ -97,8 +97,8 @@ class _Puzzle(ABC):
         if not self.is_perm_of(solved_puzzle):
             raise PuzzlePermError
 
-        src_ordering = self.board.ravel().argsort()
-        dst_ordering = solved_puzzle.board.ravel().argsort()
+        src_ordering = self._board.ravel().argsort()
+        dst_ordering = solved_puzzle._board.ravel().argsort()
 
         self._ids.ravel()[src_ordering] = dst_ordering
 
@@ -128,16 +128,16 @@ class _Puzzle(ABC):
         print(self._get_pretty_repr(use_ids=True))
 
     def is_perm_of(self, other):
-        if self.board.shape != other.board.shape:
+        if self._board.shape != other._board.shape:
             return False
 
-        return np.array_equal(np.sort(self.board, axis=None), np.sort(other.board, axis=None))
+        return np.array_equal(np.sort(self._board, axis=None), np.sort(other._board, axis=None))
 
     def has_equal_board(self, other):
         if not isinstance(other, _Puzzle):
             raise TypeError("other has to be a Puzzle.")
 
-        return np.array_equal(self.board, other.board)
+        return np.array_equal(self._board, other._board)
 
     def has_equal_ids(self, other):
         if not isinstance(other, _Puzzle):
@@ -152,7 +152,7 @@ class _Puzzle(ABC):
 
     @property
     def shape(self):
-        return self.board.shape
+        return self._board.shape
 
     @property
     def n_pieces(self):
@@ -163,7 +163,7 @@ class _Puzzle(ABC):
 
     def __repr__(self, *, with_meta=True):
         str_meta = f", ids={self._ids.tolist()}" if with_meta else ""
-        return f"{type(self).__name__}({self.board.tolist()}{str_meta})"
+        return f"{type(self).__name__}({self._board.tolist()}{str_meta})"
 
     def _get_rotcomp_solution(self):
         rotcomp = RotComp()
@@ -193,10 +193,10 @@ class _Puzzle(ABC):
             for src_id, dst_id in zip(rot.roll(), rot):
                 dst_multi_index = previous_perm._get_multi_index_from_id(dst_id)
                 ted_perm._ids[dst_multi_index] = src_id
-                ted_perm.board[dst_multi_index] = previous_perm.board[previous_perm._get_multi_index_from_id(src_id)]
+                ted_perm._board[dst_multi_index] = previous_perm._board[previous_perm._get_multi_index_from_id(src_id)]
 
         self._ids = ted_perm._ids
-        self.board = ted_perm.board
+        self._board = ted_perm._board
 
     @abstractmethod
     def _get_pretty_repr(self, *, use_ids=False):
@@ -401,7 +401,7 @@ class LoopoverPuzzle(_Puzzle):
         movecomp = MoveComp(movecomp)
 
         for move in movecomp:
-            for board in (self.board, self._ids):
+            for board in (self._board, self._ids):
                 if move.axis == 0:
                     board[:, move.index_] = np.roll(board[:, move.index_], move.shift)
                 else:
@@ -421,7 +421,7 @@ class LoopoverPuzzle(_Puzzle):
         return Move(axis, index_, shift)
 
     def _get_pretty_repr(self, *, use_ids=False):
-        board_to_repr = self.board if not use_ids else self._ids
+        board_to_repr = self._board if not use_ids else self._ids
         if HAS_TABULATE:
             str_ = tabulate(board_to_repr, tablefmt="fancy_grid")
         else:
@@ -466,7 +466,7 @@ class LinearPuzzle(_Puzzle):
         self._rot_directly(rotcomp)
 
     def _get_pretty_repr(self, *, use_ids=False):
-        board_to_repr = self.board if not use_ids else self._ids
+        board_to_repr = self._board if not use_ids else self._ids
         if HAS_TABULATE:
             str_ = tabulate([board_to_repr], tablefmt="fancy_grid")
         else:
