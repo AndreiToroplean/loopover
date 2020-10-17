@@ -1224,12 +1224,12 @@ class MoveComp(list):
         return cls([Move.from_str(move_str) for move_str in move_strs])
 
     @property
-    def distance(self):
-        return sum(abs(move.shift) for move in self)
-
-    @property
     def as_strs(self):
         return [move_str for move in self for move_str in move.as_strs]
+
+    @property
+    def distance(self):
+        return sum(abs(move.shift) for move in self)
 
     def compressed(self):
         new_movecomp = type(self)(self)
@@ -1330,11 +1330,10 @@ class MoveComp(list):
     def insert(self, order, move):
         super().insert(order, Move(*move))
 
-    def __str__(self):
-        return self.__repr__()
+    def __eq__(self, other):
+        other = type(self)(other)
 
-    def __repr__(self):
-        return f"{type(self).__name__}([{', '.join(repr(tuple(move)) for move in self)}])"
+        return super(type(self), self.compressed()).__eq__(other.compressed())
 
     def __neg__(self):
         return type(self)([-move for move in reversed(self)])
@@ -1356,10 +1355,11 @@ class MoveComp(list):
     def __isub__(self, other):
         return self.__iadd__(-other)
 
-    def __eq__(self, other):
-        other = type(self)(other)
+    def __str__(self):
+        return self.__repr__()
 
-        return super(type(self), self.compressed()).__eq__(other.compressed())
+    def __repr__(self):
+        return f"{type(self).__name__}([{', '.join(repr(tuple(move)) for move in self)}])"
 
 
 class Rot(list):
