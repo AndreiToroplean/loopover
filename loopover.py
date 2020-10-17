@@ -1695,9 +1695,9 @@ def _smallest_shift(shift, mod):
 
 
 def loopover(mixed_up_board, solved_board):
-    puzzle = LoopoverPuzzle(mixed_up_board)
-    puzzle.define_solved_perm(solved_board)
-    solution = puzzle.get_solution()
+    loopover_puzzle = LoopoverPuzzle(mixed_up_board)
+    loopover_puzzle.define_solved_perm(solved_board)
+    solution = loopover_puzzle.get_solution()
     if solution is None:
         return None
 
