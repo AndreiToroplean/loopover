@@ -5,7 +5,7 @@ class TestLoopoverPuzzle:
         loopover_puzzle_solved = LoopoverPuzzle.from_shape((10, 10), randomize=True)
         loopover_puzzle.define_solved_perm(loopover_puzzle_solved)
         solution = loopover_puzzle.get_solution()
-        loopover_puzzle.apply_legal_action(solution)
+        loopover_puzzle.apply_action(solution)
         assert loopover_puzzle.is_solved
 
     def test_apply_tri_rot(self):
@@ -24,8 +24,8 @@ class TestRotComp:
         rotcomp = RotComp.from_random(4, max_index=16)
         linear_puzzle_a = LinearPuzzle.from_rotcomp(rotcomp)
         linear_puzzle_b = linear_puzzle_a.copy()
-        linear_puzzle_a.apply_legal_action(rotcomp)
-        linear_puzzle_b.apply_legal_action(rotcomp.compressed)
+        linear_puzzle_a.apply_action(rotcomp)
+        linear_puzzle_b.apply_action(rotcomp.compressed)
         assert linear_puzzle_a.has_equal_board(linear_puzzle_b)
 
 

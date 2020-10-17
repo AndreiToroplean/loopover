@@ -112,7 +112,7 @@ class _Puzzle(ABC):
 
     @abstractmethod
     def get_solution(self):
-        """Return a sequence of legal actions taking self from its current permutation to the solved one.
+        """Return a sequence of actions taking self from its current permutation to the solved one.
 
         These actions can either be Move or Rot objects depending on what the type of puzzle considers legal.
 
@@ -122,7 +122,7 @@ class _Puzzle(ABC):
         pass
 
     @abstractmethod
-    def apply_legal_action(self, action):
+    def apply_action(self, action):
         """Apply the given action to self.
 
         This either can be moving or rotating depending on the type of puzzle.
@@ -161,7 +161,7 @@ class _Puzzle(ABC):
 
     @abstractmethod
     def randomize_perm(self):
-        """Generate and apply a random legal action to self. """
+        """Generate and apply a random action to self. """
         pass
 
     @abstractmethod
@@ -325,13 +325,6 @@ class LoopoverPuzzle(_Puzzle):
             raise PuzzleDimError
         return super().from_shape(shape, randomize=randomize)
 
-    def randomize_perm(self):
-        movecomp = self.get_random_movecomp(
-            len_=self.n_pieces,
-            )
-
-        self.move(movecomp)
-
     def get_solution(self):
         working_perm = self.copy()
 
@@ -357,8 +350,20 @@ class LoopoverPuzzle(_Puzzle):
 
         return solution
 
-    def apply_legal_action(self, action):
+    def apply_action(self, action):
+        """Apply the given action to self.
+
+        Args:
+            action: MoveComp or alike to apply to self.
+        """
         self.move(action)
+
+    def randomize_perm(self):
+        movecomp = self.get_random_movecomp(
+            len_=self.n_pieces,
+            )
+
+        self.move(movecomp)
 
     def rot(self, rotcomp):
         """Apply a RotComp or alike transformation to self.
@@ -391,6 +396,42 @@ class LoopoverPuzzle(_Puzzle):
 
             # Reversing setup:
             self.move(-setup_movecomp)
+
+    def move_from_strs(self, move_strs):
+        """Apply the MoveComp described by these move_strs.
+
+        Args:
+            move_strs: Sequence of Moves described in move_str grammar.
+        """
+        self.move(MoveComp.from_strs(move_strs))
+
+    def move(self, movecomp):
+        """Apply the transformation encoded in movecomp.
+
+        Args:
+            movecomp: MoveComp or alike object describing the transformation to apply.
+        """
+        movecomp = MoveComp(movecomp)
+
+        for move in movecomp:
+            for board in (self._board, self._ids):
+                if move.axis == 0:
+                    board[:, move.index_] = np.roll(board[:, move.index_], move.shift)
+                else:
+                    board[move.index_, :] = np.roll(board[move.index_, :], move.shift)
+
+            self.applied_moves.append(move)
+
+    def get_random_movecomp(self, len_=1):
+        """Return a random MoveComp.
+
+        Args:
+            len_: (optional) The number of Moves in the returned MoveComp. By default, 1.
+
+        Returns:
+            movecomp: a random MoveComp.
+        """
+        return MoveComp([self._get_random_move() for _ in range(len_)])
 
     def _get_setup_movecomp(self, rot):
         """Return the MoveComp needed to setup the board in order to be able to apply the operation to perform the rot.
@@ -467,23 +508,6 @@ class LoopoverPuzzle(_Puzzle):
 
         return setup_movecomp, main_id, id_a, id_b
 
-    def _get_center_id(self, ids):
-        """Return an id such that the cumulative distance from it to the given ids is minimized. Non-public method.
-
-        Args:
-            ids: The ids to find the center for.
-
-        Returns:
-            center_id: The center for these ids.
-        """
-        multi_indices = zip(*(self._get_multi_index_from_id(id_) for id_ in ids))
-
-        mean_multi_index = []
-        for axis_len, axis_indices in zip(self.shape, multi_indices):
-            mean_multi_index.append(_modular_median(axis_indices, axis_len))
-
-        return self._ids[tuple(mean_multi_index)]
-
     def _get_shortest_path(self, src_id, dst_id, *, first_axis=0):
         """Return the MoveComp with the smallest distance that will take src_id to dst_id. Non-public method.
 
@@ -515,6 +539,35 @@ class LoopoverPuzzle(_Puzzle):
 
         return movecomp
 
+    def _get_random_move(self):
+        """Return a random Move. Non-public method.
+
+        Returns:
+            move: a random Move.
+        """
+        axis = random.randint(0, 1)
+        index_ = random.randint(0, self.shape[axis ^ 1] - 1)
+        shift = random.randint(1, self.shape[axis] - 1)
+
+        return Move(axis, index_, shift)
+
+    def _get_center_id(self, ids):
+        """Return an id such that the cumulative distance from it to the given ids is minimized. Non-public method.
+
+        Args:
+            ids: The ids to find the center for.
+
+        Returns:
+            center_id: The center for these ids.
+        """
+        multi_indices = zip(*(self._get_multi_index_from_id(id_) for id_ in ids))
+
+        mean_multi_index = []
+        for axis_len, axis_indices in zip(self.shape, multi_indices):
+            mean_multi_index.append(_modular_median(axis_indices, axis_len))
+
+        return self._ids[tuple(mean_multi_index)]
+
     def _get_shifted_id(self, id_, multi_shift):
         """Return the id located at id_ + multi_shift. Non-public method.
 
@@ -530,54 +583,6 @@ class LoopoverPuzzle(_Puzzle):
             for axis_index, axis_shift, axis_len in zip(multi_index, multi_shift, self.shape))
 
         return self._ids[shifted_multi_index]
-
-    def move_from_strs(self, move_strs):
-        """Apply the MoveComp described by these move_strs.
-
-        Args:
-            move_strs: Sequence of Moves described in move_str grammar.
-        """
-        self.move(MoveComp.from_strs(move_strs))
-
-    def move(self, movecomp):
-        """Apply the transformation encoded in movecomp.
-
-        Args:
-            movecomp: MoveComp or alike object describing the transformation to apply.
-        """
-        movecomp = MoveComp(movecomp)
-
-        for move in movecomp:
-            for board in (self._board, self._ids):
-                if move.axis == 0:
-                    board[:, move.index_] = np.roll(board[:, move.index_], move.shift)
-                else:
-                    board[move.index_, :] = np.roll(board[move.index_, :], move.shift)
-
-            self.applied_moves.append(move)
-
-    def get_random_movecomp(self, len_=1):
-        """Return a random MoveComp.
-
-        Args:
-            len_: (optional) The number of Moves in the returned MoveComp. By default, 1.
-
-        Returns:
-            movecomp: a random MoveComp.
-        """
-        return MoveComp([self._random_move() for _ in range(len_)])
-
-    def _random_move(self):
-        """Return a random Move. Non-public method.
-
-        Returns:
-            move: a random Move.
-        """
-        axis = random.randint(0, 1)
-        index_ = random.randint(0, self.shape[axis ^ 1] - 1)
-        shift = random.randint(1, self.shape[axis] - 1)
-
-        return Move(axis, index_, shift)
 
     def _get_pretty_repr(self, *, use_ids=False):
         board_to_repr = self._board if not use_ids else self._ids
@@ -612,13 +617,13 @@ class LinearPuzzle(_Puzzle):
             max_len=self.n_pieces,
             )
 
-        self.apply_legal_action(rotcomp)
+        self.apply_action(rotcomp)
 
     def get_solution(self):
         solution = self.get_rotcomp_solution()
         return solution
 
-    def apply_legal_action(self, action):
+    def apply_action(self, action):
         self.rot(action)
 
     def rot(self, rotcomp):
