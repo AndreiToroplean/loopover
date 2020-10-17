@@ -1412,6 +1412,17 @@ class Rot(list):
     def tris(self):
         return self.subdivide(3)
 
+    def subdivide(self, len_):
+        subdivs = RotComp()
+        for i in range(0, len(self), len_-1):
+            indices = self[i:i + len_]
+            if len(indices) == 1:
+                break
+
+            subdivs.append(type(self)(indices))
+
+        return subdivs
+
     @property
     def all_rolls(self):
         roll = Rot(self)
@@ -1431,17 +1442,6 @@ class Rot(list):
         for _ in range(-roll_amount % len(self)):
             roll.append(roll.pop(0))
         return Rot(roll)
-
-    def subdivide(self, len_):
-        subdivs = RotComp()
-        for i in range(0, len(self), len_-1):
-            indices = self[i:i + len_]
-            if len(indices) == 1:
-                break
-
-            subdivs.append(type(self)(indices))
-
-        return subdivs
 
     def __neg__(self):
         return type(self)(list(reversed(self)))
