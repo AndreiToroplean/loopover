@@ -7,20 +7,20 @@ https://github.com/AndreiToroplean/loopover
 Author: Andrei Toroplean
 
 The interesting objects in this module are the classes LoopoverPuzzle and LinearPuzzle, and the function loopover.
-There is also, on a secondary level, the classes MoveComp and RotComp, which represent sequences (or compositions) of,
-respectively, Move and Rot objects.
+There is also, on a secondary level, the classes MoveComp and RotComp, which represent sequences (or compositions)
+of, respectively, Move and Rot objects.
 
-LoopoverPuzzle objects are the main focus here.  They represent a puzzle game with pieces arranged in a grid.  These
-pieces can slide horizontally and vertically, where in order to let a row or column slide, a piece will jump over to the
-other side of the row or column, in what is called a Move.
-A Rot (for rotation), is a generalization of the (higher-level) concept of swapping two pieces, but for an arbitrary
-number of pieces.  Those are ultimately implemented in terms of Moves when applied to LoopoverPuzzles.  Sequences of
-Moves and Rots are implemented as their own objects, through the classes RotComp and MoveComp respectively.
-LoopoverPuzzles have, conceptually, a solved state.  To get from a given state to the solved state, you want a solution
-in the form of a MoveComp object, and the object has methods to get and apply this solution.
+LoopoverPuzzle objects are the main focus here. They represent a puzzle game with pieces arranged in a grid. These
+pieces can slide horizontally and vertically, where in order to let a row or column slide, a piece will jump over to
+the other side of the row or column, in what is called a Move. A Rot (for rotation), is a generalization of the (
+higher-level) concept of swapping two pieces, but for an arbitrary number of pieces. Those are ultimately implemented
+in terms of Moves when applied to LoopoverPuzzles. Sequences of Moves and Rots are implemented as their own objects,
+through the classes RotComp and MoveComp respectively. LoopoverPuzzles have, conceptually, a solved state,
+or permutation. To get from a given permutation to the solved permutation, you want a solution in the form of a
+MoveComp object, and the object has methods to get and apply this solution.
 
-LinearPuzzle objects are a simplified version of LoopoverPuzzle ones.  Their solutions are directly RotComp objects, as
-they don't have the concept of a move, only that of a rot.  Other than that, they behave a lot like LoopoverPuzzles and
+LinearPuzzle objects are a simplified version of LoopoverPuzzle ones. Their solutions are directly RotComp objects, as
+they don't have the concept of a move, only that of a rot. Other than that, they behave a lot like LoopoverPuzzles and
 as such, they are a great substitute to test algorithms on while dealing with less complexity.
 """
 
@@ -50,10 +50,10 @@ class _Puzzle(ABC):
     """Abstract, non-public parent class of LoopoverPuzzle and LinearPuzzle. """
 
     def __init__(self, board, *, ids=None):
-        """Build a _Puzzle object with its board and _ids attributes.
+        """Construct a _Puzzle object with its board and _ids attributes.
 
         Args:
-            board: Array-like object describing the current state of the puzzle board.
+            board: Array-like object describing the pieces in their starting permutation of the puzzle board.
             ids: (optional, keyword-only) Array-like object used to uniquely identify the pieces of the board, also
             representing their order in the solved permutation.
         """
@@ -66,7 +66,7 @@ class _Puzzle(ABC):
             return
 
         self.board = np.array(board, dtype=str)
-        self._ids = self._get_indices_array()
+        self._ids = self._get_range_array()
 
         if ids is not None:
             self._ids = np.array(ids)
@@ -74,13 +74,33 @@ class _Puzzle(ABC):
     @classmethod
     @abstractmethod
     def from_shape(cls, shape, *, randomize=False):
-        board = cls._get_indices_array(shape=shape)
+        """Alternate constructor for _Puzzle objects.
+
+        Constructs one, of the requested shape, and fills it with counting numbers from 0. Its solved state will be
+        the permutation where all numbers are in order from left to right, from top to bottom. Option to randomize
+        its starting permutation.
+
+        Args:
+            shape: Tuple of dimensions for the board.
+            randomize: (optional) Randomize the starting permutation of the board. False by default.
+        """
+        board = cls._get_range_array(shape=shape)
         loopover_puzzle = cls(board)
 
         if randomize:
             loopover_puzzle.randomize_perm()
 
         return loopover_puzzle
+
+    def define_solved_perm(self, solved_board):
+        solved_puzzle = type(self)(solved_board)
+        if not self.is_perm_of(solved_puzzle):
+            raise PuzzlePermError
+
+        src_ordering = self.board.ravel().argsort()
+        dst_ordering = solved_puzzle.board.ravel().argsort()
+
+        self._ids.ravel()[src_ordering] = dst_ordering
 
     @abstractmethod
     def get_solution(self):
@@ -91,23 +111,39 @@ class _Puzzle(ABC):
         pass
 
     @abstractmethod
-    def rot(self, rotcomp):
-        pass
-
-    @abstractmethod
-    def _get_pretty_repr(self, *, use_ids=False):
-        pass
-
-    @abstractmethod
     def randomize_perm(self):
         pass
 
-    def __str__(self):
-        return self.__repr__(with_meta=False)
+    @abstractmethod
+    def rot(self, rotcomp):
+        pass
 
-    def __repr__(self, *, with_meta=True):
-        str_meta = f", ids={self._ids.tolist()}" if with_meta else ""
-        return f"{type(self).__name__}({self.board.tolist()}{str_meta})"
+    def copy(self):
+        return type(self)(self)
+
+    def draw(self):
+        print(self._get_pretty_repr())
+
+    def draw_ids(self):
+        print(self._get_pretty_repr(use_ids=True))
+
+    def is_perm_of(self, other):
+        if self.board.shape != other.board.shape:
+            return False
+
+        return np.array_equal(np.sort(self.board, axis=None), np.sort(other.board, axis=None))
+
+    def has_equal_board(self, other):
+        if not isinstance(other, _Puzzle):
+            raise TypeError("other has to be a Puzzle.")
+
+        return np.array_equal(self.board, other.board)
+
+    def has_equal_ids(self, other):
+        if not isinstance(other, _Puzzle):
+            raise TypeError("other has to be a Puzzle.")
+
+        return np.array_equal(self._ids, other._ids)
 
     @property
     def is_solved(self):
@@ -122,46 +158,14 @@ class _Puzzle(ABC):
     def n_pieces(self):
         return prod(self.shape)
 
-    def _rot_directly(self, rotcomp):
-        rotcomp = RotComp(rotcomp)
+    def __str__(self):
+        return self.__repr__(with_meta=False)
 
-        ted_perm = self.copy()
-        for rot in rotcomp:
-            previous_perm = ted_perm.copy()
-            for src_id, dst_id in zip(rot.roll(), rot):
-                dst_multi_index = previous_perm._get_multi_index_from_id(dst_id)
-                ted_perm._ids[dst_multi_index] = src_id
-                ted_perm.board[dst_multi_index] = previous_perm.board[previous_perm._get_multi_index_from_id(src_id)]
+    def __repr__(self, *, with_meta=True):
+        str_meta = f", ids={self._ids.tolist()}" if with_meta else ""
+        return f"{type(self).__name__}({self.board.tolist()}{str_meta})"
 
-        self._ids = ted_perm._ids
-        self.board = ted_perm.board
-
-    def copy(self):
-        return type(self)(self)
-
-    def recompute_ids(self, solved_board):
-        solved_puzzle = type(self)(solved_board)
-        if not self.is_perm_of(solved_puzzle):
-            raise PuzzlePermError
-
-        src_ordering = self.board.ravel().argsort()
-        dst_ordering = solved_puzzle.board.ravel().argsort()
-
-        self._ids.ravel()[src_ordering] = dst_ordering
-
-    def _get_indices_array(self=None, *, shape=None) -> np.ndarray:
-        if shape is None:
-            shape = self.shape
-
-        return np.arange(prod(shape), dtype=int).reshape(shape)
-
-    def is_perm_of(self, other):
-        if self.board.shape != other.board.shape:
-            return False
-
-        return np.array_equal(np.sort(self.board, axis=None), np.sort(other.board, axis=None))
-
-    def get_rotcomp_solution(self):
+    def _get_rotcomp_solution(self):
         rotcomp = RotComp()
         visited_indices = []
 
@@ -180,11 +184,26 @@ class _Puzzle(ABC):
 
         return rotcomp
 
-    def draw(self):
-        print(self._get_pretty_repr())
+    def _rot_directly(self, rotcomp):
+        rotcomp = RotComp(rotcomp)
 
-    def draw_ids(self):
-        print(self._get_pretty_repr(use_ids=True))
+        ted_perm = self.copy()
+        for rot in rotcomp:
+            previous_perm = ted_perm.copy()
+            for src_id, dst_id in zip(rot.roll(), rot):
+                dst_multi_index = previous_perm._get_multi_index_from_id(dst_id)
+                ted_perm._ids[dst_multi_index] = src_id
+                ted_perm.board[dst_multi_index] = previous_perm.board[previous_perm._get_multi_index_from_id(src_id)]
+
+        self._ids = ted_perm._ids
+        self.board = ted_perm.board
+
+    @abstractmethod
+    def _get_pretty_repr(self, *, use_ids=False):
+        pass
+
+    def _get_multi_index_from_id(self, id_):
+        return tuple(int(axis_index) for axis_index in np.where(self._ids == id_))
 
     def _unravel_index(self, indices):
         return np.unravel_index(indices, self.shape)
@@ -192,24 +211,15 @@ class _Puzzle(ABC):
     def _ravel_multi_index(self, multi_indices):
         return np.ravel_multi_index(multi_indices, self.shape)
 
-    def _get_multi_index_from_id(self, id_):
-        return tuple(int(axis_index) for axis_index in np.where(self._ids == id_))
+    def _get_range_array(self=None, *, shape=None) -> np.ndarray:
+        if shape is None:
+            shape = self.shape
 
-    def has_equal_board(self, other):
-        if not isinstance(other, _Puzzle):
-            raise TypeError("other has to be a Puzzle.")
-
-        return np.array_equal(self.board, other.board)
-
-    def has_equal_ids(self, other):
-        if not isinstance(other, _Puzzle):
-            raise TypeError("other has to be a Puzzle.")
-
-        return np.array_equal(self._ids, other._ids)
+        return np.arange(prod(shape), dtype=int).reshape(shape)
 
 
 class LoopoverPuzzle(_Puzzle):
-    """Represents a puzzle game with pieces arranged in a grid.  These pieces can slide horizontally and vertically,
+    """Represents a puzzle game with pieces arranged in a grid. These pieces can slide horizontally and vertically,
     where in order to let a row or column slide, a piece will jump over to the other side of the row or column,
     in what is called a Move.
     """
@@ -235,7 +245,7 @@ class LoopoverPuzzle(_Puzzle):
         working_perm = self.copy()
 
         while True:
-            rotcomp = working_perm.get_rotcomp_solution()
+            rotcomp = working_perm._get_rotcomp_solution()
             try:
                 rotcomp.to_tris(be_strict=True)
             except RotCompSubdivideError:
@@ -420,7 +430,7 @@ class LoopoverPuzzle(_Puzzle):
 
 
 class LinearPuzzle(_Puzzle):
-    """Simplified, 1-dimensional alternative of LoopoverPuzzles.  Works directly with Rots instead of Moves.  Very
+    """Simplified, 1-dimensional alternative of LoopoverPuzzles. Works directly with Rots instead of Moves. Very
     similar behavior apart from that.
     """
     def __init__(self, board, *, ids=None):
@@ -446,7 +456,7 @@ class LinearPuzzle(_Puzzle):
         self.rot(rotcomp)
 
     def get_solution(self):
-        solution = self.get_rotcomp_solution()
+        solution = self._get_rotcomp_solution()
         return solution
 
     def apply_solution(self, solution):
@@ -465,13 +475,12 @@ class LinearPuzzle(_Puzzle):
 
 
 class RotComp(list):
-    """Represents a sequence (or composition) of Rot objects.  Behaves like a list, with additional methods to
+    """Represents a sequence (or composition) of Rot objects. Behaves like a list, with additional methods to
     manipulate it while maintaining its value.
     """
 
     def __init__(self, rots=None, *, ids=None, max_index=0):
-        """
-        Create the object representing the composition of these Rots.
+        """Construct an object representing the composition of these Rots.
 
         Args:
             rots: (Optional) Rot or sequence of Rots. Interpreted as an empty sequence if not passed.
@@ -625,8 +634,8 @@ class RotComp(list):
         src_perm = LinearPuzzle.from_rotcomp(self)
         dst_perm = LinearPuzzle(src_perm)
         dst_perm.rot(self)
-        src_perm.recompute_ids(dst_perm)
-        return src_perm.get_rotcomp_solution()
+        src_perm.define_solved_perm(dst_perm)
+        return src_perm._get_rotcomp_solution()
 
     def _compress_old(self):
         """Not finished implementation. """
@@ -1004,13 +1013,12 @@ class RotComp(list):
 
 
 class MoveComp(list):
-    """Represents a sequence (or composition) of Move objects.  Behaves like a list, with additional methods to
+    """Represents a sequence (or composition) of Move objects. Behaves like a list, with additional methods to
     manipulate it while maintaining its value.
     """
 
     def __init__(self, moves=None):
-        """
-        Create the object representing the composition of these moves.
+        """Construct an object representing the composition of these Moves.
 
         Args:
             moves: (optional) Move or sequence of Moves. Interpreted as an empty sequence if not passed.
@@ -1184,14 +1192,23 @@ class MoveComp(list):
 
 
 class Rot(list):
-    """Represents a rotation, which is a generalization of the concept of swapping two entities, for arbitrary
-    amounts. They are mainly used inside RotComp objects, and encode a transformation of _Puzzle objects.  They are
-    composed of indices in a sequence, and conceptually on application of that transformation, the entity identified
-    by each index will be swapped for the one identified by the preceding index in sequence, while the first one is
-    swapped for the last.
+    """Represents a rotation, which is a generalization of the concept of swapping two entities to arbitrary amounts.
+    They are mainly used inside RotComp objects, and encode a transformation of _Puzzle objects. Their representation
+    is composed of indices in a sequence, and conceptually on application of that transformation, the entity
+    identified by each index will be swapped for the one identified by the preceding index in sequence,
+    while the first one is swapped for the last.
     """
 
     def __init__(self, indices=None):
+        """Construct a Rot object.
+
+        Args:
+            indices: (optional) The sequence of indices making up this Rot. Interpreted as an empty sequence if not
+            passed.
+
+        Raises:
+            RotError: If there's an index that is repeated inside of indices.
+        """
         if indices is None:
             super().__init__([])
             return
@@ -1282,8 +1299,8 @@ class Rot(list):
 
 
 class Move(tuple):
-    """Represents the sliding of a row or column on a 2D grid of entities.  Mainly used inside MoveComp objects.  Used
-    to encode the moves on LoopoverPuzzle objects.  They are composed of 3 things: an axis, an index and a shift.
+    """Represents the sliding of a row or column on a 2D grid of entities. Mainly used inside MoveComp objects. Used
+    to encode the moves on LoopoverPuzzle objects. They are composed of 3 things: an axis, an index and a shift.
     """
 
     def __new__(cls, axis: int, index_: int, shift: int):
@@ -1293,8 +1310,7 @@ class Move(tuple):
         return super().__new__(cls, (axis, index_, shift))
 
     def __init__(self,  axis: int, index_: int, shift: int):
-        """
-        Create a Move object.
+        """Construct a Move object.
 
         Args:
             axis: Can be 0, for column (vertical), or 1, for row (horizontal).
@@ -1509,7 +1525,7 @@ def _smallest_shift(shift, mod):
 
 def loopover(mixed_up_board, solved_board):
     puzzle = LoopoverPuzzle(mixed_up_board)
-    puzzle.recompute_ids(solved_board)
+    puzzle.define_solved_perm(solved_board)
     solution = puzzle.get_solution()
     if solution is None:
         return None

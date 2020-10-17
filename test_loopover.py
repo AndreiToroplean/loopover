@@ -3,7 +3,7 @@ class TestLoopoverPuzzle:
         from loopover import LoopoverPuzzle
         loopover_puzzle = LoopoverPuzzle.from_shape((10, 10), randomize=True)
         loopover_puzzle_solved = LoopoverPuzzle.from_shape((10, 10), randomize=True)
-        loopover_puzzle.recompute_ids(loopover_puzzle_solved)
+        loopover_puzzle.define_solved_perm(loopover_puzzle_solved)
         solution = loopover_puzzle.get_solution()
         loopover_puzzle.apply_solution(solution)
         assert loopover_puzzle.is_solved
