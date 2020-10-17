@@ -346,7 +346,7 @@ class LoopoverPuzzle(_Puzzle):
 
         working_perm.rot(rotcomp)
 
-        solution = working_perm.applied_moves.compressed
+        solution = working_perm.applied_moves.compressed()
 
         return solution
 
@@ -709,103 +709,9 @@ class RotComp(list):
             n_rots = random.randint(n_rots, max_n_rots)
         return cls([Rot.from_random(max_index, len_, max_len) for _ in range(n_rots)])
 
-    def count_by_len(self, len_):
-        return sum(1 if len(rot) == len_ else 0 for rot in self)
-
-    @property
-    def sorted_indices(self):
-        indices = set()
-        for rot in self:
-            indices.update(rot)
-        return sorted(indices)
-
-    @property
-    def max_index(self):
-        max_index = 0
-        for rot in self:
-            max_index = max(*rot, max_index)
-        self._max_index = max(self._max_index, max_index)
-        return self._max_index
-
-    @property
-    def _min_available_id(self):
-        if not self._ids:
-            return 0
-
-        return max(self._ids) + 1
-
-    def randomize_ordering(self):
-        dst_ordering = list(self._ids)
-        random.shuffle(dst_ordering)
-        self._change_ordering(dst_ordering)
-
-    def to_bis(self, order=None, *, use_ids=False, be_strict=False):
-        self._subdivide(2, order, use_ids=use_ids, be_strict=be_strict)
-
-    def to_tris(self, order=None, *, use_ids=False, be_strict=False):
-        self._subdivide(3, order, use_ids=use_ids, be_strict=be_strict)
-
-    def _subdivide(self, len_, order=None, *, use_ids=False, be_strict=False):
-        if use_ids:
-            order = self._order_from_id(order)
-
-        new_rotcomp = type(self)()
-        new_ids = []
-        min_available_id = self._min_available_id
-
-        for order_, (rot, id_) in enumerate(zip(self, self._ids)):
-            new_ids.append(id_)
-            if order is None or order_ == order:
-                subdivs = rot.subdivide(len_)
-                new_rotcomp += subdivs
-                for _ in range(len(subdivs) - 1):
-                    new_ids.append(min_available_id)
-                    min_available_id += 1
-            else:
-                new_rotcomp.append(rot)
-        self[:] = new_rotcomp[:]
-
-        self._ids = new_ids
-
-        self._sort_rots_by_len(reverse=True)
-
-        self._grow_rots_to(len_, be_strict=be_strict)
-
-    def _grow_rots_to(self, len_, *, be_strict=False):
-        n_rots = len(self)
-        n_rots_visited = 0
-        for len_to_grow in range(2, len_):
-            n_rots_len = self.count_by_len(len_to_grow)
-            if be_strict and n_rots_len % 2 != 0:
-                raise RotCompSubdivideError
-            n_rots_grown = 0
-            while n_rots_len - n_rots_grown >= 2:
-                self.grow(n_rots - n_rots_len - n_rots_visited + n_rots_grown, len_ - len_to_grow)
-                n_rots_grown += 2
-            n_rots_visited += n_rots_len
-
-    def _sort_rots_by_len(self, *, reverse=False):
-        ids_and_lens = [(id_, len(rot)) for id_, rot in zip(self._ids, self)]
-        ids_and_lens.sort(key=lambda id_and_len: id_and_len[1], reverse=reverse)
-        self._change_ordering([id_ for id_, _ in ids_and_lens])
-
-    def _change_ordering(self, dst_ordering):
-        for dst_order, src_id in enumerate(dst_ordering):
-            self.move(self._order_from_id(src_id), dst_order)
-
-    def _roll_rot(self, order, roll_amount=1):
-        self[order][:] = self[order].roll(roll_amount)
-
-    def _common_indices(self, *orders):
-        if orders:
-            return set.intersection(*(set(self[order]) for order in orders))
-
-        return set.intersection(*(set(rot) for rot in self))
-
     def compress(self):
-        self[:] = self.compressed
+        self[:] = self.compressed()
 
-    @property
     def compressed(self):
         src_perm = LinearPuzzle.from_rotcomp(self)
         dst_perm = LinearPuzzle(src_perm)
@@ -813,114 +719,16 @@ class RotComp(list):
         src_perm.define_solved_perm(dst_perm)
         return src_perm.get_rotcomp_solution()
 
-    def _compress_old(self):
-        """Not finished implementation. """
-        self.to_bis()
-        self.reset_ids()
+    def to_bis(self, order=None, *, use_ids=False, be_strict=False):
+        self._subdivide(2, order, use_ids=use_ids, be_strict=be_strict)
 
-        print("\n--> Compress starts.")  # for debug
-        self.print_with_ids()  # for debug
+    def to_tris(self, order=None, *, use_ids=False, be_strict=False):
+        self._subdivide(3, order, use_ids=use_ids, be_strict=be_strict)
 
-        groups, cycles = self._find_groups_and_cycles()
-        print("cycle 0:", cycles[0][0])  # for debug
-
-        for group, group_cycles in zip(groups, cycles):
-            for cycle in group_cycles:
-                if not cycle:
-                    continue
-
-                print("\n--> Moving cycle at the beginning of RotComp.")  # for debug
-                for dst_order, id_ in enumerate(sorted(cycle)):
-                    self.move_back(
-                        self._order_from_id(id_),
-                        dst_order,
-                        )
-                    self.print_with_ids()  # for debug
-
-                print("\n--> Placing rots in the order of cycle.")  # for debug
-                for dst_order, id_ in enumerate(cycle):
-                    self.move(
-                        self._order_from_id(id_),
-                        dst_order,
-                        )
-                    self.print_with_ids()  # for debug
-                print("\n--> Fusing and separating to make rots continuous.")  # for debug
-                self.fuse()
-                self.print_with_ids()  # for debug
-                self.to_bis(0)
-                self.print_with_ids()  # for debug
-                print("\n--> Closing cycle.")  # for debug
-                self.move(
-                    dst_order,
-                    1,
-                    )
-                self.print_with_ids()  # for debug
-                print("\n--> Canceling out.")  # for debug
-                self.fuse()  # Canceling out
-                self.print_with_ids()  # for debug
-                print("\n--> Fusing the rest of the cycle.")  # for debug
-                self.fuse()  # Fusing the rest of the cycle
-                self.print_with_ids()  # for debug
-                break  # for debug
-
-            break  # for debug
-
-    def _find_groups_and_cycles(self):
-        """Only works on RotComps made out of bis. """
-        if any(len(rot) != 2 for rot in self):
-            raise RotCompError("RotCompo._find_groups_and_cycles only works on RotComps made out of bis. ")
-
-        groups = []
-        cycles = []
-        visited_indices = set()
-        for index in self.sorted_indices:
-            if index in visited_indices:
-                continue
-            group, group_cycles = self._analyse_dependencies(orders=[], indices=[index])
-            for order in group:
-                visited_indices.update(self[order])
-            groups.append(group)
-            cycles.append(group_cycles)
-
-        return groups, cycles
-
-    def _analyse_dependencies(self, orders, indices):
-        """Only works on RotComps made out of bis. """
-        group = []
-        group_cycles = []
-
-        active_index = indices[-1]
-
-        for order, rot in enumerate(self):
-            if order in orders or any(order in cycle for cycle in group_cycles):
-                continue
-
-            for roll in rot.all_rolls:
-                if active_index == roll[0]:
-                    break
-            else:
-                continue
-
-            group.append(order)
-            new_index = roll[-1]
-
-            new_orders = orders + [order]
-            new_indices = indices + [new_index]
-
-            found_cycle = new_index in indices
-            if found_cycle:
-                group_cycles.append(new_orders[indices.index(new_index):])
-                continue
-
-            desc_group, desc_group_cycles = self._analyse_dependencies(new_orders, new_indices)
-
-            group += desc_group
-            group_cycles += desc_group_cycles
-
-        return group, group_cycles
-
-    def reset_ids(self):
-        self._ids = list(range(len(self)))
+    def randomize_ordering(self):
+        dst_ordering = list(self._ids)
+        random.shuffle(dst_ordering)
+        self._change_ordering(dst_ordering)
 
     def grow(self, dst_order=0, amount=1, *, use_ids=False):
         if amount == 0:
@@ -929,7 +737,7 @@ class RotComp(list):
             raise RotCompGrowError
 
         if use_ids:
-            dst_order = self._order_from_id(dst_order)
+            dst_order = self._get_order_from_id(dst_order)
 
         src_order = dst_order + 1
 
@@ -940,7 +748,7 @@ class RotComp(list):
         except IndexError:
             raise RotCompGrowError
 
-        common_indices = self._common_indices(dst_order, src_order)
+        common_indices = self._get_common_indices(dst_order, src_order)
 
         for src_index in src_rot:
             if src_index in common_indices:
@@ -992,8 +800,8 @@ class RotComp(list):
         If two rots cancel out, stop fusing.
         """
         if use_ids:
-            dst_order = self._order_from_id(dst_order)
-            src_orders = [self._order_from_id(src_order) for src_order in src_orders]
+            dst_order = self._get_order_from_id(dst_order)
+            src_orders = [self._get_order_from_id(src_order) for src_order in src_orders]
 
         do_raise = True
 
@@ -1027,7 +835,7 @@ class RotComp(list):
                 del self[dst_order:dst_order + 2]
                 break
 
-            common_indices = self._common_indices(dst_order, src_order)
+            common_indices = self._get_common_indices(dst_order, src_order)
             if len(common_indices) != 1:
                 if do_raise:
                     raise RotCompFuseError
@@ -1054,8 +862,8 @@ class RotComp(list):
 
     def move(self, src_order=0, dst_order=None, *, is_back=False, use_ids=False):
         if use_ids:
-            src_order = self._order_from_id(src_order)
-            dst_order = self._order_from_id(dst_order)
+            src_order = self._get_order_from_id(src_order)
+            dst_order = self._get_order_from_id(dst_order)
 
         if dst_order is None:
             dst_order = src_order + 1
@@ -1067,6 +875,91 @@ class RotComp(list):
         order_shift = (dst_order - src_order) // n_steps
         for current_order in range(src_order, dst_order, order_shift):
             self._swap(current_order, current_order + order_shift, is_back=is_back)
+
+    def reset_ids(self):
+        self._ids = list(range(len(self)))
+
+    def print_with_orders(self, *, use_ids=False):
+        str_rotcomp = repr(self)
+        str_before_list = f"{type(self).__name__}(["
+        len_before_list = len(str_before_list)
+        str_orders = " " * (len_before_list + 1)
+        str_list = str_rotcomp[len_before_list:]
+        for order, str_rot in enumerate(str_list.split("[")[1:]):
+            str_order = str(self._get_id_from_order(order) if use_ids else order)
+            str_orders += str_order + " " * (len(str_rot) - len(str_order) + 1)
+        print(str_rotcomp)
+        print(str_orders)
+
+    def print_with_ids(self):
+        self.print_with_orders(use_ids=True)
+
+    def count_by_len(self, len_):
+        return sum(1 if len(rot) == len_ else 0 for rot in self)
+
+    def append(self, rot):
+        super().append(Rot(rot))
+        self._ids.append(self._min_available_id)
+
+    def insert(self, order, rot):
+        super().insert(order, Rot(rot))
+        self._ids.insert(order, self._min_available_id)
+
+    @property
+    def max_index(self):
+        max_index = 0
+        for rot in self:
+            max_index = max(*rot, max_index)
+        self._max_index = max(self._max_index, max_index)
+        return self._max_index
+
+    def _subdivide(self, len_, order=None, *, use_ids=False, be_strict=False):
+        if use_ids:
+            order = self._get_order_from_id(order)
+
+        new_rotcomp = type(self)()
+        new_ids = []
+        min_available_id = self._min_available_id
+
+        for order_, (rot, id_) in enumerate(zip(self, self._ids)):
+            new_ids.append(id_)
+            if order is None or order_ == order:
+                subdivs = rot.subdivide(len_)
+                new_rotcomp += subdivs
+                for _ in range(len(subdivs) - 1):
+                    new_ids.append(min_available_id)
+                    min_available_id += 1
+            else:
+                new_rotcomp.append(rot)
+        self[:] = new_rotcomp[:]
+
+        self._ids = new_ids
+
+        self._sort_rots_by_len(reverse=True)
+
+        self._grow_rots_to(len_, be_strict=be_strict)
+
+    def _grow_rots_to(self, len_, *, be_strict=False):
+        n_rots = len(self)
+        n_rots_visited = 0
+        for len_to_grow in range(2, len_):
+            n_rots_len = self.count_by_len(len_to_grow)
+            if be_strict and n_rots_len % 2 != 0:
+                raise RotCompSubdivideError
+            n_rots_grown = 0
+            while n_rots_len - n_rots_grown >= 2:
+                self.grow(n_rots - n_rots_len - n_rots_visited + n_rots_grown, len_ - len_to_grow)
+                n_rots_grown += 2
+            n_rots_visited += n_rots_len
+
+    def _sort_rots_by_len(self, *, reverse=False):
+        ids_and_lens = [(id_, len(rot)) for id_, rot in zip(self._ids, self)]
+        ids_and_lens.sort(key=lambda id_and_len: id_and_len[1], reverse=reverse)
+        self._change_ordering([id_ for id_, _ in ids_and_lens])
+
+    def _change_ordering(self, dst_ordering):
+        for dst_order, src_id in enumerate(dst_ordering):
+            self.move(self._get_order_from_id(src_id), dst_order)
 
     def _swap(self, src_order, dst_order, *, is_back=False):
         if is_back:
@@ -1101,58 +994,147 @@ class RotComp(list):
 
         return remapped_rot
 
-    def print_with_orders(self, *, use_ids=False):
-        str_rotcomp = repr(self)
-        str_before_list = f"{type(self).__name__}(["
-        len_before_list = len(str_before_list)
-        str_orders = " " * (len_before_list + 1)
-        str_list = str_rotcomp[len_before_list:]
-        for order, str_rot in enumerate(str_list.split("[")[1:]):
-            str_order = str(self._id_from_order(order) if use_ids else order)
-            str_orders += str_order + " " * (len(str_rot) - len(str_order) + 1)
-        print(str_rotcomp)
-        print(str_orders)
+    def _roll_rot_at(self, order, roll_amount=1):
+        self[order][:] = self[order].roll(roll_amount)
 
-    def print_with_ids(self):
-        self.print_with_orders(use_ids=True)
+    def _compress_old(self):
+        """Not finished implementation. """
+        self.to_bis()
+        self.reset_ids()
 
-    def _order_from_id(self, id_):
+        print("\n--> Compress starts.")  # for debug
+        self.print_with_ids()  # for debug
+
+        groups, cycles = self._get_groups_and_cycles()
+        print("cycle 0:", cycles[0][0])  # for debug
+
+        for group, group_cycles in zip(groups, cycles):
+            for cycle in group_cycles:
+                if not cycle:
+                    continue
+
+                print("\n--> Moving cycle at the beginning of RotComp.")  # for debug
+                for dst_order, id_ in enumerate(sorted(cycle)):
+                    self.move_back(
+                        self._get_order_from_id(id_),
+                        dst_order,
+                        )
+                    self.print_with_ids()  # for debug
+
+                print("\n--> Placing rots in the order of cycle.")  # for debug
+                for dst_order, id_ in enumerate(cycle):
+                    self.move(
+                        self._get_order_from_id(id_),
+                        dst_order,
+                        )
+                    self.print_with_ids()  # for debug
+                print("\n--> Fusing and separating to make rots continuous.")  # for debug
+                self.fuse()
+                self.print_with_ids()  # for debug
+                self.to_bis(0)
+                self.print_with_ids()  # for debug
+                print("\n--> Closing cycle.")  # for debug
+                self.move(
+                    dst_order,
+                    1,
+                    )
+                self.print_with_ids()  # for debug
+                print("\n--> Canceling out.")  # for debug
+                self.fuse()  # Canceling out
+                self.print_with_ids()  # for debug
+                print("\n--> Fusing the rest of the cycle.")  # for debug
+                self.fuse()  # Fusing the rest of the cycle
+                self.print_with_ids()  # for debug
+                break  # for debug
+
+            break  # for debug
+
+    def _get_groups_and_cycles(self):
+        """Only works on RotComps made out of bis. """
+        if any(len(rot) != 2 for rot in self):
+            raise RotCompError("RotCompo._get_groups_and_cycles only works on RotComps made out of bis. ")
+
+        groups = []
+        cycles = []
+        visited_indices = set()
+        for index in self._sorted_indices:
+            if index in visited_indices:
+                continue
+            group, group_cycles = self._analyse_dependencies(orders=[], indices=[index])
+            for order in group:
+                visited_indices.update(self[order])
+            groups.append(group)
+            cycles.append(group_cycles)
+
+        return groups, cycles
+
+    def _analyse_dependencies(self, orders, indices):
+        """Only works on RotComps made out of bis. """
+        group = []
+        group_cycles = []
+
+        active_index = indices[-1]
+
+        for order, rot in enumerate(self):
+            if order in orders or any(order in cycle for cycle in group_cycles):
+                continue
+
+            for roll in rot.all_rolls:
+                if active_index == roll[0]:
+                    break
+            else:
+                continue
+
+            group.append(order)
+            new_index = roll[-1]
+
+            new_orders = orders + [order]
+            new_indices = indices + [new_index]
+
+            found_cycle = new_index in indices
+            if found_cycle:
+                group_cycles.append(new_orders[indices.index(new_index):])
+                continue
+
+            desc_group, desc_group_cycles = self._analyse_dependencies(new_orders, new_indices)
+
+            group += desc_group
+            group_cycles += desc_group_cycles
+
+        return group, group_cycles
+
+    def _get_common_indices(self, *orders):
+        if orders:
+            return set.intersection(*(set(self[order]) for order in orders))
+
+        return set.intersection(*(set(rot) for rot in self))
+
+    def _get_order_from_id(self, id_):
         if id_ is None:
             return None
         return self._ids.index(id_)
 
-    def _id_from_order(self, order):
+    def _get_id_from_order(self, order):
         if order is None:
             return None
         return self._ids[order]
 
-    def append(self, rot):
-        super().append(Rot(rot))
-        self._ids.append(self._min_available_id)
+    @property
+    def _sorted_indices(self):
+        indices = set()
+        for rot in self:
+            indices.update(rot)
+        return sorted(indices)
 
-    def insert(self, order, rot):
-        super().insert(order, Rot(rot))
-        self._ids.insert(order, self._min_available_id)
+    @property
+    def _min_available_id(self):
+        if not self._ids:
+            return 0
 
-    def __delitem__(self, order):
-        super().__delitem__(order)
-        del self._ids[order]
+        return max(self._ids) + 1
 
-    def __str__(self):
-        return self.__repr__(with_meta=False)
-
-    def __repr__(self, *, with_meta=True):
-        str_meta = f", ids={self._ids}, max_index={self.max_index}" if with_meta else ""
-        return f"{type(self).__name__}([{', '.join(repr(list(index_)) for index_ in self)}]{str_meta})"
-
-    def __getitem__(self, order):
-        super_rtn = super().__getitem__(order)
-        if isinstance(order, slice):
-            new_rot = type(self)(super_rtn)
-            new_rot._ids = self._ids[order]
-            return new_rot
-
-        return super_rtn
+    def __eq__(self, other):
+        return super(type(self), self.compressed()).__eq__(other.compressed())
 
     def __neg__(self):
         rotcomp = type(self)()
@@ -1184,8 +1166,25 @@ class RotComp(list):
     def __isub__(self, other):
         return self.__iadd__(-other)
 
-    def __eq__(self, other):
-        return super(type(self), self.compressed).__eq__(other.compressed)
+    def __str__(self):
+        return self.__repr__(with_meta=False)
+
+    def __repr__(self, *, with_meta=True):
+        str_meta = f", ids={self._ids}, max_index={self.max_index}" if with_meta else ""
+        return f"{type(self).__name__}([{', '.join(repr(list(index_)) for index_ in self)}]{str_meta})"
+
+    def __delitem__(self, order):
+        super().__delitem__(order)
+        del self._ids[order]
+
+    def __getitem__(self, order):
+        super_rtn = super().__getitem__(order)
+        if isinstance(order, slice):
+            new_rot = type(self)(super_rtn)
+            new_rot._ids = self._ids[order]
+            return new_rot
+
+        return super_rtn
 
 
 class MoveComp(list):
@@ -1232,7 +1231,6 @@ class MoveComp(list):
     def as_strs(self):
         return [move_str for move in self for move_str in move.as_strs]
 
-    @property
     def compressed(self):
         new_movecomp = type(self)(self)
         while True:
@@ -1270,7 +1268,7 @@ class MoveComp(list):
         return new_movecomp
 
     def compress(self):
-        self[:] = self.compressed
+        self[:] = self.compressed()
 
     def fuse(self, dst_order=None, *src_orders):
         orders = [dst_order] + list(src_orders)
@@ -1361,7 +1359,7 @@ class MoveComp(list):
     def __eq__(self, other):
         other = type(self)(other)
 
-        return super(type(self), self.compressed).__eq__(other.compressed)
+        return super(type(self), self.compressed()).__eq__(other.compressed())
 
 
 class Rot(list):

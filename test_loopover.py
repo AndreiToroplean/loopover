@@ -25,7 +25,7 @@ class TestRotComp:
         linear_puzzle_a = LinearPuzzle.from_rotcomp(rotcomp)
         linear_puzzle_b = linear_puzzle_a.copy()
         linear_puzzle_a.apply_action(rotcomp)
-        linear_puzzle_b.apply_action(rotcomp.compressed)
+        linear_puzzle_b.apply_action(rotcomp.compressed())
         assert linear_puzzle_a.has_equal_board(linear_puzzle_b)
 
 
@@ -35,7 +35,7 @@ class TestMoveComp:
         loopover_puzzle_a = LoopoverPuzzle.from_shape((10, 10), randomize=True)
         loopover_puzzle_b = loopover_puzzle_a.copy()
         movecomp = loopover_puzzle_a.get_random_movecomp(100)
-        loopover_puzzle_a.move(movecomp.compressed)
+        loopover_puzzle_a.move(movecomp.compressed())
         loopover_puzzle_b.move(movecomp)
         assert loopover_puzzle_a.has_equal_board(loopover_puzzle_b)
 
