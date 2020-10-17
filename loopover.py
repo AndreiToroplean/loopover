@@ -475,9 +475,6 @@ class LoopoverPuzzle(_Puzzle):
 
         Returns:
             center_id: The center for these ids.
-
-        Raises:
-            ValueError: if ids is an empty sequence.
         """
         multi_indices = zip(*(self._get_multi_index_from_id(id_) for id_ in ids))
 
@@ -535,17 +532,19 @@ class LoopoverPuzzle(_Puzzle):
         return self._ids[shifted_multi_index]
 
     def move_from_strs(self, move_strs):
-        """Apply the MoveComp described by move_strs.
+        """Apply the MoveComp described by these move_strs.
 
         Args:
-            move_strs: Sequence of Moves described in strs.
-
-        Raises:
-            MoveError: if a str doesn't follow move_str grammar.
+            move_strs: Sequence of Moves described in move_str grammar.
         """
         self.move(MoveComp.from_strs(move_strs))
 
     def move(self, movecomp):
+        """Apply the transformation encoded in movecomp.
+
+        Args:
+            movecomp: MoveComp or alike object describing the transformation to apply.
+        """
         movecomp = MoveComp(movecomp)
 
         for move in movecomp:
@@ -558,10 +557,22 @@ class LoopoverPuzzle(_Puzzle):
             self.applied_moves.append(move)
 
     def get_random_movecomp(self, len_=1):
-        return MoveComp([self._random_move for _ in range(len_)])
+        """Return a random MoveComp.
 
-    @property
+        Args:
+            len_: (optional) The number of Moves in the returned MoveComp. By default, 1.
+
+        Returns:
+            movecomp: a random MoveComp.
+        """
+        return MoveComp([self._random_move() for _ in range(len_)])
+
     def _random_move(self):
+        """Return a random Move. Non-public method.
+
+        Returns:
+            move: a random Move.
+        """
         axis = random.randint(0, 1)
         index_ = random.randint(0, self.shape[axis ^ 1] - 1)
         shift = random.randint(1, self.shape[axis] - 1)
@@ -1170,9 +1181,6 @@ class MoveComp(list):
 
         Args:
             moves: (optional) Move or sequence of Moves. Interpreted as an empty sequence if not passed.
-
-        Raises:
-            MoveCompError: if moves cannot be parsed as a Move nor a sequence of Moves.
         """
 
         if moves is None:
@@ -1355,7 +1363,7 @@ class Rot(list):
             passed.
 
         Raises:
-            RotError: ff there's an index that is repeated inside of indices.
+            RotError: if there's an index that is repeated inside of indices.
         """
         if indices is None:
             super().__init__([])
