@@ -1892,9 +1892,9 @@ class MoveStrError(MoveError):
 
 
 def _modular_mean(values, mod):
-    """Return the modular mean, or 0 if it is centered. """
+    """Return the modular mean, or 0 if undefined. """
     if len(values) == 0:
-        raise ValueError
+        return 0
 
     values = np.array(values, dtype=float)
     angles = 2 * np.pi * values / mod
@@ -1911,7 +1911,7 @@ def _modular_mean(values, mod):
 def _modular_median(values, mod):
     """Return the modular median. """
     if len(values) == 0:
-        raise ValueError
+        return 0
 
     pot_medians_shifts = []
     for pot_median in values:
@@ -1929,8 +1929,17 @@ def _smallest_shift(shift, mod):
     return (shift + (mod // 2)) % mod - mod // 2
 
 
-def loopover(mixed_up_board, solved_board):
-    loopover_puzzle = LoopoverPuzzle(mixed_up_board)
+def loopover(board, solved_board):
+    """Return the solution to the LoopoverPuzzle.
+
+    Args:
+        board: 2D array-like representing the pieces of the board in their starting permutation.
+        solved_board: 2D array-like representing the pieces of the board in their desired permutation.
+
+    Returns:
+        move_strs: Sequence of Moves to solve the LoopoverPuzzle encoded in move_str grammar.
+    """
+    loopover_puzzle = LoopoverPuzzle(board)
     loopover_puzzle.define_solved_perm(solved_board)
     solution = loopover_puzzle.get_solution()
     if solution is None:
