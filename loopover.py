@@ -718,7 +718,7 @@ class RotComp(list):
 
     @classmethod
     def from_random(cls, n_rots=1, max_n_rots=None, *, max_index=16, len_=2, max_len=None):
-        """Alternate constructor, generating a random RotComp.
+        """Alternate constructor, generate a random RotComp.
 
         Args:
             n_rots: (optional) Number of Rots to generate. By default, 1.
@@ -1350,7 +1350,7 @@ class MoveComp(list):
     manipulate it while maintaining its value.
 
     Glossary:
-        str_grammar: conceptual grammar as observed in the parsing done in methods from_strs and as_strs. Lets one
+        move_str grammar: conceptual grammar as observed in the parsing done in methods from_strs and as_strs. Lets one
         encode MoveComps as sequences of strs.
         Order: Index of a Move inside the MoveComp, ie its place in the sequence of Moves.
         Ordering: Order in which Moves appear in the MoveComp.
@@ -1591,7 +1591,7 @@ class Rot(list):
 
     @classmethod
     def from_random(cls, max_index=16, len_=2, max_len=None):
-        """Alternate constructor, generating a random Rot.
+        """Alternate constructor, generate a random Rot.
 
         Args:
             max_index: (optional) Maximum index to be found in these Rots. By default, 16.
@@ -1685,7 +1685,14 @@ class Rot(list):
 
 class Move(tuple):
     """Represents the sliding of a row or column on a 2D grid of entities. Mainly used inside MoveComp objects. Used
-    to encode the moves on LoopoverPuzzle objects. They are composed of 3 things: an axis, an index and a shift.
+    to encode the moves of LoopoverPuzzle objects. They are composed of 3 things: an axis, an index and a shift.
+
+    Glossary:
+        move_str grammar: conceptual grammar as observed in the parsing done in methods from_str and as_strs. Lets one
+        encode Moves as strs.
+        axis: Axis on a 2D board. Can be 0, for column (vertical), or 1, for row (horizontal).
+        index_: Index of the row or column to be transformed.
+        shift: Number of cells to slide the row or column by.
     """
 
     def __new__(cls, axis: int, index_: int, shift: int):
@@ -1698,9 +1705,9 @@ class Move(tuple):
         """Construct a Move object.
 
         Args:
-            axis: Can be 0, for column (vertical), or 1, for row (horizontal).
-            index_: Corresponds to the index of the row or column to be transformed.
-            shift: The number of cells to slide the row or column by.
+            axis: Axis on a 2D board. Can be 0, for column (vertical), or 1, for row (horizontal).
+            index_: Index of the row or column to be transformed.
+            shift: Number of cells to slide the row or column by.
 
         Raises:
             MoveError: if axis is not 0 and not 1.
@@ -1709,6 +1716,7 @@ class Move(tuple):
 
     @classmethod
     def from_random(cls, board_shape):
+        """Alternate constructor, generate a random Move given a board shape. """
         axis = random.randint(0, 1)
         index_ = random.randint(0, board_shape[axis ^ 1] - 1)
         shift = random.randint(1, board_shape[axis] - 1)
@@ -1716,7 +1724,17 @@ class Move(tuple):
         return cls(axis, index_, shift)
 
     @classmethod
+    def null(cls):
+        """Alternate constructor, generate a null-valued Move. """
+        return cls(0, 0, 0)
+
+    @classmethod
     def from_str(cls, move_str):
+        """Alternate constructor, parse the move_str through move_str grammar to generate the corresponding Move.
+
+        Raises:
+            MoveStrError: if the parsing isn't successful.
+        """
         try:
             letter, index_ = tuple(move_str)
         except ValueError:
@@ -1734,29 +1752,29 @@ class Move(tuple):
 
         return cls(axis, index_, shift)
 
-    @classmethod
-    def null(cls):
-        return cls(0, 0, 0)
-
     @property
     def as_strs(self):
+        """self represented as a list of strs using move_str grammar. """
         if self.shift == 0:
             return ()
 
         norm_shift = self.shift / abs(self.shift)
         letter = self._axis_shift_to_letter[(self.axis, norm_shift)]
-        return tuple(f"{letter}{self.index_}" for _ in range(abs(self.shift)))
+        return [f"{letter}{self.index_}" for _ in range(abs(self.shift))]
 
     @property
     def axis(self):
+        """Axis on a 2D board. Can be 0, for column (vertical), or 1, for row (horizontal). """
         return self[0]
 
     @property
     def index_(self):
+        """Index of the row or column to be transformed. """
         return self[1]
 
     @property
     def shift(self):
+        """Number of cells to slide the row or column by. """
         return self[2]
 
     def __eq__(self, other):
