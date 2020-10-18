@@ -12,8 +12,8 @@ of, respectively, Move and Rot objects.
 
 LoopoverPuzzle objects are the main focus here. They represent a puzzle game with pieces arranged in a grid. These
 pieces can slide horizontally and vertically, where in order to let a row or column slide, a piece will jump over to
-the other side of the row or column, in what is called a Move. A Rot (for rotation), is a generalization of the (
-higher-level) concept of swapping two pieces, but for an arbitrary number of pieces. Those are ultimately implemented
+the other side of the row or column, in what is called a Move. A Rot (for rotation), is a generalization of the
+(higher-level) concept of swapping two pieces, but for an arbitrary number of pieces. Those are ultimately implemented
 in terms of Moves when applied to LoopoverPuzzles. Sequences of Moves and Rots are implemented as their own objects,
 through the classes RotComp and MoveComp respectively. LoopoverPuzzles have, conceptually, a solved state,
 or permutation. To get from a given permutation to the solved permutation, you want a solution in the form of a
