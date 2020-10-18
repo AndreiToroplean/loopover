@@ -269,7 +269,7 @@ class _Puzzle(ABC):
             board is.
 
         Returns:
-            pretty_repr: A string that is intended as a drawing of the requested board.
+            pretty_repr: A str that is intended as a drawing of the requested board.
         """
         pass
 
@@ -665,13 +665,14 @@ class RotComp(list):
         group, there is a path of Rots that share one index, to link them.
         Cycle: (not formerly defined in relation to graph theory) Chain of dependencies in a group in the shape of a
         cycle.
+        src_rot, dst_rot: Rots respectively at src_order, dst_order.
     """
 
     def __init__(self, rots=None, *, ids=None, max_index=0):
         """Construct an object representing the composition of these Rots.
 
         Args:
-            rots: (Optional) Rot or sequence of Rots. Interpreted as an empty sequence if not passed.
+            rots: (Optional) Rot or sequence of Rots. By default, interpreted as an empty sequence.
             ids: (optional, keyword-only) Unique identifiers for those Rots.
             max_index: (optional, keyword-only) Maximum index expected to be found inside the Rots of this sequence.
 
@@ -737,7 +738,7 @@ class RotComp(list):
         self[:] = self.compressed()
 
     def compressed(self):
-        """Return a equal-valued compressed representation of self. """
+        """Return an equal-valued compressed representation of self. """
         src_perm = LinearPuzzle.from_rotcomp(self)
         dst_perm = LinearPuzzle(src_perm)
         dst_perm.rot(self)
@@ -841,9 +842,9 @@ class RotComp(list):
         self.fuse(src_order, src_order - 1)
 
     def fuse(self, dst_order=0, *src_orders, use_ids=False):
-        """Fuse rots together while preserving self's value, and canceling out relevant Rots.
+        """Fuse Rots together while preserving self's value, and canceling out relevant Rots.
 
-        If two rots cancel out, stop fusing.
+        If two Rots cancel out, stop fusing.
 
         Args:
             dst_order: (optional) The order of the Rot to fuse into. By default, 0.
@@ -1347,13 +1348,23 @@ class RotComp(list):
 class MoveComp(list):
     """Represents a sequence (or composition) of Move objects. Behaves like a list, with additional methods to
     manipulate it while maintaining its value.
+
+    Glossary:
+        str_grammar: conceptual grammar as observed in the parsing done in methods from_strs and as_strs. Lets one
+        encode MoveComps as sequences of strs.
+        Order: Index of a Move inside the MoveComp, ie its place in the sequence of Moves.
+        Ordering: Order in which Moves appear in the MoveComp.
+        src_move, dst_move: Moves respectively at src_order, dst_order.
     """
 
     def __init__(self, moves=None):
         """Construct an object representing the composition of these Moves.
 
         Args:
-            moves: (optional) Move or sequence of Moves. Interpreted as an empty sequence if not passed.
+            moves: (optional) Move or sequence of Moves. By default, interpreted as an empty sequence.
+
+        Raises:
+            MoveCompError: if moves cannot be parsed as a Move nor a sequence of Moves.
         """
 
         if moves is None:
@@ -1378,17 +1389,32 @@ class MoveComp(list):
 
     @classmethod
     def from_strs(cls, move_strs):
+        """Alternate constructor, from a sequence of strs parsed through move_str grammar.
+
+        Args:
+            move_strs: Sequence of strs to parse.
+
+        Raises:
+            MoveStrError: if a str of move_strs couldn't be parsed.
+        """
         return cls([Move.from_str(move_str) for move_str in move_strs])
 
     @property
     def as_strs(self):
+        """self represented as a list of strs using move_str grammar. """
         return [move_str for move in self for move_str in move.as_strs]
 
     @property
     def distance(self):
+        """Sum of the absolute value of the shifts of the moves in self. """
         return sum(abs(move.shift) for move in self)
 
+    def compress(self):
+        """Compress the representation of self without changing its value. """
+        self[:] = self.compressed()
+
     def compressed(self):
+        """Return an equal-valued compressed representation of self. """
         new_movecomp = type(self)(self)
         while True:
             iter_n_fused = 0
@@ -1424,10 +1450,21 @@ class MoveComp(list):
 
         return new_movecomp
 
-    def compress(self):
-        self[:] = self.compressed()
-
     def fuse(self, dst_order=None, *src_orders):
+        """Fuse Moves together while preserving self's value, and return the number of fuses that took place.
+
+        If the fused Moves end up canceling out, delete the null-valued resulting Move.
+
+        Args:
+            dst_order: (optional) The order of the Rot to fuse Moves into. By default, interpreted as 0.
+            *src_orders: The orders of the Moves to be fused into src_move. By default, interpreted as [dst_order + 1].
+
+        Returns:
+            n_fused: Number of fuses that have taken place.
+
+        Raises:
+            MoveCompFuseError: if dst_order and src_orders are not consecutive and in order.
+        """
         orders = [dst_order] + list(src_orders)
         if src_orders and not (sorted(orders) == list(range(dst_order, src_orders[-1] + 1)) == orders):
             raise MoveCompFuseError
@@ -1537,8 +1574,8 @@ class Rot(list):
         """Construct a Rot object.
 
         Args:
-            indices: (optional) The sequence of indices making up this Rot. Interpreted as an empty sequence if not
-            passed.
+            indices: (optional) The sequence of indices making up this Rot. By default, interpreted as an empty
+            sequence.
 
         Raises:
             RotError: if there's an index that is repeated inside of indices.
@@ -1669,17 +1706,17 @@ class Move(tuple):
         try:
             letter, index_ = tuple(move_str)
         except ValueError:
-            raise MoveError("Invalid move_str. ")
+            raise MoveStrError("Invalid move_str. ")
 
         try:
             axis, shift = cls._letter_to_axis_shift[letter]
         except KeyError:
-            raise MoveError("Invalid letter, must be 'R', 'L', 'U', or 'D'. ")
+            raise MoveStrError("Invalid letter, must be 'R', 'L', 'U', or 'D'. ")
 
         try:
             index_ = int(index_)
         except ValueError:
-            raise MoveError("Invalid index, must be int. ")
+            raise MoveStrError("Invalid index, must be int. ")
 
         return cls(axis, index_, shift)
 
@@ -1815,6 +1852,10 @@ class MoveCompFuseError(MoveCompError):
 
 
 class MoveError(Exception):
+    pass
+
+
+class MoveStrError(MoveError):
     pass
 
 
