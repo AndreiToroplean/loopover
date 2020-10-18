@@ -252,7 +252,7 @@ class _Puzzle(ABC):
         ted_perm = self.copy()
         for rot in rotcomp:
             previous_perm = ted_perm.copy()
-            for src_id, dst_id in zip(rot.roll(), rot):
+            for src_id, dst_id in zip(rot.rolled(), rot):
                 dst_multi_index = previous_perm._get_multi_index_from_id(dst_id)
                 ted_perm._ids[dst_multi_index] = src_id
                 ted_perm._board[dst_multi_index] = previous_perm._board[previous_perm._get_multi_index_from_id(src_id)]
@@ -655,16 +655,16 @@ class RotComp(list):
     manipulate it while maintaining its value.
 
     Glossary:
-        Order: Index of a Rot inside the RotComp, ie its place in the sequence of Rots.
-        Id: Unique identifier for each Rot in the RotComp. This moves with the identified Rot, so that it can be
-        tracked.
-        Ordering: Order in which Rots appear in the RotComp.
-        [swapping/moving] Over: operation that might change a Rot's value in order to preserve the RotComp's. As opposed
-        to under, in which case the Rot will keep its value while the one it went under might change its.
         Group: (not linked to group theory) Set of Rots that form a chain of dependencies. Ie for each two Rots in the
         group, there is a path of Rots that share one index, to link them.
         Cycle: (not formerly defined in relation to graph theory) Chain of dependencies in a group in the shape of a
         cycle.
+        Ordering: Order in which Rots appear in the RotComp.
+        [swapping/moving] Over: operation that might change a Rot's value in order to preserve the RotComp's. As opposed
+        Order: Index of a Rot inside the RotComp, ie its place in the sequence of Rots.
+        Id: Unique identifier for each Rot in the RotComp. This moves with the identified Rot, so that it can be
+        tracked.
+        to under, in which case the Rot will keep its value while the one it went under might change its.
         src_rot, dst_rot: Rots respectively at src_order, dst_order.
     """
 
@@ -1014,7 +1014,7 @@ class RotComp(list):
         for order_, (rot, id_) in enumerate(zip(self, self._ids)):
             new_ids.append(id_)
             if order is None or order_ == order:
-                subdivs = rot.subdivide(len_)
+                subdivs = rot.subdivided(len_)
                 new_rotcomp += subdivs
                 for _ in range(len(subdivs) - 1):
                     new_ids.append(min_available_id)
@@ -1119,7 +1119,7 @@ class RotComp(list):
 
     def _roll_rot_at(self, order, roll_amount=1):
         """Roll the Rot found at the requested order. Non-public method. """
-        self[order][:] = self[order].roll(roll_amount)
+        self[order][:] = self[order].rolled(roll_amount)
 
     def _compress_old(self):
         """Unfinished implementation, do not use as is.
@@ -1557,14 +1557,14 @@ class MoveComp(list):
 
 
 class Rot(list):
-    """Represents a rotation, which is a generalization of the concept of swapping two entities to arbitrary amounts.
-    They are mainly used inside RotComp objects, and encode a transformation of _Puzzle objects. Their representation
-    is composed of indices in a sequence, and conceptually on application of that transformation, the entity
-    identified by each index will be swapped for the one identified by the preceding index in sequence,
+    """Represents a rotation, which is a generalization of the concept of swapping two entities, but to arbitrary
+    amounts. They are mainly used inside RotComp objects, and encode a transformation of _Puzzle objects. Their
+    representation is composed of indices in a sequence, and conceptually on application of that transformation, the
+    entity identified by each index will be swapped for the one identified by the preceding index in sequence,
     while the first one is swapped for the last.
 
     Glossary:
-        Roll: alternate, equal-valued representation of the Rot by rolling it.
+        Roll: alternate, equal-valued representation of the Rot, obtained by rolling it.
         Bi: Rot containing two indices.
         Tri: Rot containing three indices.
         Index: Identifiers that make up the Rot.
@@ -1591,6 +1591,14 @@ class Rot(list):
 
     @classmethod
     def from_random(cls, max_index=16, len_=2, max_len=None):
+        """Alternate constructor, generating a random Rot.
+
+        Args:
+            max_index: (optional) Maximum index to be found in these Rots. By default, 16.
+            len_: (optional) Number of indices per Rot. By default, 2.
+            max_len: (optional) Maximum number of indices per Rot, making their number random. By default,
+            the number is fixed to len_.
+        """
         if max_len is not None:
             max_len = min(max_len, max_index)
             len_ = random.randint(len_, max_len)
@@ -1604,15 +1612,8 @@ class Rot(list):
 
         return cls(rot)
 
-    @property
-    def bis(self):
-        return self.subdivide(2)
-
-    @property
-    def tris(self):
-        return self.subdivide(3)
-
-    def subdivide(self, len_):
+    def subdivided(self, len_):
+        """Return a RotComp representing self subdivided into Rots of the requested len, while preserving its value. """
         subdivs = RotComp()
         for i in range(0, len(self), len_-1):
             indices = self[i:i + len_]
@@ -1625,6 +1626,7 @@ class Rot(list):
 
     @property
     def all_rolls(self):
+        """Generator for all possible rolls of self. """
         roll = Rot(self)
         for _ in range(len(self)):
             yield roll
@@ -1632,12 +1634,24 @@ class Rot(list):
             roll = Rot(roll)
 
     def roll_to(self, index_, *, to_front=True):
-        if to_front:
-            self[:] = self.roll(len(self) - 1 - self.index(index_))
-        else:
-            self[:] = self.roll(-self.index(index_))
+        """Roll self until the requested index is at its front.
 
-    def roll(self, roll_amount=1):
+        Args:
+            index_: The index to have in front.
+            to_front: (optional) If True, the requested index is brought to the front of self, otherwise to the back. By
+            default, True.
+        """
+        if to_front:
+            self[:] = self.rolled(len(self) - 1 - self.index(index_))
+        else:
+            self[:] = self.rolled(-self.index(index_))
+
+    def rolled(self, roll_amount=1):
+        """Return a rolled representation of self.
+
+        Args:
+            roll_amount: (optional) The amount to roll it by. By default, 1.
+        """
         roll = Rot(self)
         for _ in range(-roll_amount % len(self)):
             roll.append(roll.pop(0))
