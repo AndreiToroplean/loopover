@@ -46,11 +46,11 @@ else:
     HAS_TABULATE = True
 
 
-class _Puzzle(ABC):
+class Puzzle(ABC):
     """Abstract, non-public parent class of LoopoverPuzzle and LinearPuzzle. """
 
     def __init__(self, board, *, ids=None):
-        """Construct a _Puzzle object representing its board and its solved permutation.
+        """Construct a Puzzle object representing its board and its solved permutation.
 
         Args:
             board: Array-like object describing the pieces in their starting permutation of the puzzle board.
@@ -60,7 +60,7 @@ class _Puzzle(ABC):
         self._board: np.ndarray
         self._ids: np.ndarray
 
-        if isinstance(board, _Puzzle):
+        if isinstance(board, Puzzle):
             self._board = board._board.copy()
             self._ids = board._ids.copy()
             return
@@ -74,7 +74,7 @@ class _Puzzle(ABC):
     @classmethod
     @abstractmethod
     def from_shape(cls, shape, *, randomize=False):
-        """Alternate constructor for _Puzzle objects.
+        """Alternate constructor for Puzzle objects.
 
         Constructs one, of the requested shape, and fills it with counting numbers from 0. Its solved state will be
         the permutation where all numbers are in order from left to right, from top to bottom. Option to randomize
@@ -96,7 +96,7 @@ class _Puzzle(ABC):
         """Define the permutation in which the board is considered solved, as apparent through its is_solved attribute.
 
         Args:
-            solved_board: A _Puzzle or array-like object representing the solved permutation of self.
+            solved_board: A Puzzle or array-like object representing the solved permutation of self.
 
         Raises:
             PuzzlePermError: if the given solved_board is not a permutation of self.
@@ -117,7 +117,7 @@ class _Puzzle(ABC):
         These actions can either be Move or Rot objects depending on what the type of puzzle considers legal.
 
         Returns:
-            solution: The solution to the _Puzzle.
+            solution: The solution to the Puzzle.
         """
         pass
 
@@ -133,7 +133,7 @@ class _Puzzle(ABC):
         pass
 
     def get_rotcomp_solution(self):
-        """Return the more or less abstract solution to the _Puzzle, in the form of a RotComp.
+        """Return the more or less abstract solution to the Puzzle, in the form of a RotComp.
 
         For LoopoverPuzzles, a RotComp is a higher-level transformation that is then implemented in terms of a MoveComp.
         For LinearPuzzles, a RotComp is a legal transformation that can be applied directly.
@@ -182,19 +182,19 @@ class _Puzzle(ABC):
         print(self._get_pretty_repr())
 
     def draw_ids(self):
-        """Draw the piece ids in the form of a board, representing the expected order to solve the _Puzzle. """
+        """Draw the piece ids in the form of a board, representing the expected order to solve the Puzzle. """
         print(self._get_pretty_repr(use_ids=True))
 
     def is_perm_of(self, other):
         """Check if self and other are permutations of the same board (ie they contain the same pieces).
 
         Args:
-            other: _Puzzle object to compare self to.
+            other: Puzzle object to compare self to.
 
         Raises:
-            TypeError: it other is not a _Puzzle.
+            TypeError: it other is not a Puzzle.
         """
-        if not isinstance(other, _Puzzle):
+        if not isinstance(other, Puzzle):
             raise TypeError("other has to be a Puzzle. ")
 
         if self._board.shape != other._board.shape:
@@ -206,12 +206,12 @@ class _Puzzle(ABC):
         """Check if self and other are the same permutation of the same board.
 
         Args:
-            other: _Puzzle object to compare self to.
+            other: Puzzle object to compare self to.
 
         Raises:
-            TypeError: it other is not a _Puzzle.
+            TypeError: it other is not a Puzzle.
         """
-        if not isinstance(other, _Puzzle):
+        if not isinstance(other, Puzzle):
             raise TypeError("other has to be a Puzzle. ")
 
         return np.array_equal(self._board, other._board)
@@ -309,7 +309,7 @@ class _Puzzle(ABC):
         return np.arange(prod(shape), dtype=int).reshape(shape)
 
 
-class LoopoverPuzzle(_Puzzle):
+class LoopoverPuzzle(Puzzle):
     """Represents a puzzle game with pieces arranged in a grid. These pieces can slide horizontally and vertically,
     where in order to let a row or column slide, a piece will jump over to the other side of the row or column,
     in what is called a Move.
@@ -324,6 +324,14 @@ class LoopoverPuzzle(_Puzzle):
         if len(shape) != 2:
             raise PuzzleDimError
         return super().from_shape(shape, randomize=randomize)
+
+    def get_solution_as_strs(self):
+        """Return the solution to self as strs using move_str grammar. """
+        solution = self.get_solution()
+        if solution is None:
+            return None
+
+        return solution.as_strs
 
     def get_solution(self):
         working_perm = self.copy()
@@ -397,13 +405,13 @@ class LoopoverPuzzle(_Puzzle):
             # Reversing setup:
             self.move(-setup_movecomp)
 
-    def move_from_strs(self, move_strs):
-        """Apply the MoveComp described by these move_strs.
+    def apply_action_strs(self, action_strs):
+        """Apply the action described in these strs.
 
         Args:
-            move_strs: Sequence of Moves described in move_str grammar.
+            action_strs: Sequence of Moves encoded through move_str grammar.
         """
-        self.move(MoveComp.from_strs(move_strs))
+        self.apply_action(MoveComp.from_strs(action_strs))
 
     def move(self, movecomp):
         """Apply the transformation encoded in movecomp.
@@ -593,7 +601,7 @@ class LoopoverPuzzle(_Puzzle):
         return pretty_repr
 
 
-class LinearPuzzle(_Puzzle):
+class LinearPuzzle(Puzzle):
     """Simplified, 1-dimensional alternative of LoopoverPuzzles. Works directly with Rots instead of Moves. Very
     similar behavior apart from that.
     """
@@ -1558,7 +1566,7 @@ class MoveComp(list):
 
 class Rot(list):
     """Represents a rotation, which is a generalization of the concept of swapping two entities, but to arbitrary
-    amounts. They are mainly used inside RotComp objects, and encode a transformation of _Puzzle objects. Their
+    amounts. They are mainly used inside RotComp objects, and encode a transformation of Puzzle objects. Their
     representation is composed of indices in a sequence, and conceptually on application of that transformation, the
     entity identified by each index will be swapped for the one identified by the preceding index in sequence,
     while the first one is swapped for the last.
@@ -1931,18 +1939,12 @@ def _smallest_shift(shift, mod):
 
 def loopover(board, solved_board):
     """Return the solution to the LoopoverPuzzle.
-
     Args:
         board: 2D array-like representing the pieces of the board in their starting permutation.
         solved_board: 2D array-like representing the pieces of the board in their desired permutation.
-
     Returns:
         move_strs: Sequence of Moves to solve the LoopoverPuzzle encoded in move_str grammar.
     """
     loopover_puzzle = LoopoverPuzzle(board)
     loopover_puzzle.define_solved_perm(solved_board)
-    solution = loopover_puzzle.get_solution()
-    if solution is None:
-        return None
-
-    return solution.as_strs
+    return loopover_puzzle.get_solution_as_strs()
