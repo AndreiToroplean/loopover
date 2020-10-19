@@ -148,7 +148,7 @@ class Puzzle(ABC):
             if id_ in visited_indices:
                 continue
 
-            rotcomp.append(Rot())
+            rotcomp.append([])
             while id_ not in visited_indices:
                 visited_indices.append(id_)
                 rotcomp[-1].append(id_)
@@ -358,6 +358,14 @@ class LoopoverPuzzle(Puzzle):
 
         return solution
 
+    def apply_action_strs(self, action_strs):
+        """Apply the action described in these strs.
+
+        Args:
+            action_strs: Sequence of Moves encoded through move_str grammar.
+        """
+        self.apply_action(MoveComp.from_strs(action_strs))
+
     def apply_action(self, action):
         """Apply the given action to self.
 
@@ -404,14 +412,6 @@ class LoopoverPuzzle(Puzzle):
 
             # Reversing setup:
             self.move(-setup_movecomp)
-
-    def apply_action_strs(self, action_strs):
-        """Apply the action described in these strs.
-
-        Args:
-            action_strs: Sequence of Moves encoded through move_str grammar.
-        """
-        self.apply_action(MoveComp.from_strs(action_strs))
 
     def move(self, movecomp):
         """Apply the transformation encoded in movecomp.
@@ -1939,9 +1939,11 @@ def _smallest_shift(shift, mod):
 
 def loopover(board, solved_board):
     """Return the solution to the LoopoverPuzzle.
+
     Args:
         board: 2D array-like representing the pieces of the board in their starting permutation.
         solved_board: 2D array-like representing the pieces of the board in their desired permutation.
+
     Returns:
         move_strs: Sequence of Moves to solve the LoopoverPuzzle encoded in move_str grammar.
     """
