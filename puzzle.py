@@ -111,7 +111,7 @@ class Puzzle(ABC):
             rotcomp.append([])
             while id_ not in visited_indices:
                 visited_indices.append(id_)
-                rotcomp[-1].append(id_)
+                rotcomp[-1].append(int(id_))
                 id_ = self._ids[self._unravel_index(id_)]
 
             if len(rotcomp[-1]) < 2:
