@@ -9,14 +9,14 @@ class RotComp(list):
     Glossary:
         Group: (not linked to group theory) Set of Rots that form a chain of dependencies. Ie for each two Rots in the
         group, there is a path of Rots that share one index, to link them.
-        Cycle: (not formerly defined in relation to graph theory) Chain of dependencies in a group in the shape of a
+        Cycle: (not formally defined in relation to graph theory) Chain of dependencies in a group in the shape of a
         cycle.
         Ordering: Order in which Rots appear in the RotComp.
         [swapping/moving] Over: operation that might change a Rot's value in order to preserve the RotComp's. As opposed
+        to under, in which case the Rot will keep its value while the one it went under might change its.
         Order: Index of a Rot inside the RotComp, ie its place in the sequence of Rots.
         Id: Unique identifier for each Rot in the RotComp. This moves with the identified Rot, so that it can be
         tracked.
-        to under, in which case the Rot will keep its value while the one it went under might change its.
         src_rot, dst_rot: Rots respectively at src_order, dst_order.
     """
 
